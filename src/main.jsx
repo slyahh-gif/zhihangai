@@ -183,6 +183,11 @@ function AuthGate({ onAuthenticated }) {
       return;
     }
     if (mode === 'register') {
+      const existing = JSON.parse(localStorage.getItem('zhihang-ai-user') || 'null');
+      if (existing?.email === email) {
+        setMessage('该邮箱已经注册，请切换到“登录”进入原有账号，测评结果会保留。');
+        return;
+      }
       const user = { name, email, password: form.password };
       localStorage.setItem('zhihang-ai-user', JSON.stringify(user));
       localStorage.removeItem(`zhihang-ai-assessment-${email}`);
@@ -242,7 +247,7 @@ function App() {
   const openSection = (label) => setActive(label);
   const finishAssessment = (answers) => { const result = calculateAssessment(answers); localStorage.setItem(`zhihang-ai-assessment-${currentUser.email}`, JSON.stringify(result)); setAssessmentResult(result); openInfo('测评完成', `综合得分 ${result.overall} 分。最适合的方向是“${result.primaryCareer.name}”：${result.primaryCareer.intro}`); };
   const login = (user) => { setCurrentUser(user); try { setAssessmentResult(JSON.parse(localStorage.getItem(`zhihang-ai-assessment-${user.email}`) || 'null')); } catch { setAssessmentResult(null); } };
-  const logout = () => { sessionStorage.removeItem('zhihang-ai-session'); setCurrentUser(null); setAssessmentResult(null); setUserMenu(false); };
+  const logout = () => { sessionStorage.removeItem('zhihang-ai-session'); setCurrentUser(null); setAssessmentResult(null); setUserMenu(false); setModal(null); };
   const requestLogout = () => { setUserMenu(false); setModal({ kind: 'confirm', title: '确认退出登录？', text: '退出后需要重新输入账号和密码才能进入职航 AI。' }); };
   const toggleTheme = () => setTheme((current) => { const next = current === 'light' ? 'dark' : 'light'; localStorage.setItem('zhihang-ai-theme', next); return next; });
   const requestAssessmentReset = () => setModal({ kind: 'reset', title: '确认清除测评结果？', text: '清除后，职业分数、雷达图和岗位建议会恢复为“待测评”状态。此操作仅影响当前账号。' });
