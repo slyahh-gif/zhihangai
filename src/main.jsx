@@ -219,7 +219,8 @@ function SupabaseAuthGate({ onAuthenticated }) {
     setLoading(true);
     setMessage('');
     if (mode === 'register') {
-      const { data, error } = await supabase.auth.signUp({ email, password: form.password, options: { data: { display_name: name } } });
+      const emailRedirectTo = window.location.hostname.endsWith('github.io') ? 'https://slyahh-gif.github.io/zhihangai/' : `${window.location.origin}/`;
+      const { data, error } = await supabase.auth.signUp({ email, password: form.password, options: { data: { display_name: name }, emailRedirectTo } });
       if (error) setMessage(error.message);
       else if (data.session) onAuthenticated({ id: data.user.id, name, email });
       else setMessage('注册成功，请前往邮箱完成验证后再登录。');
