@@ -249,7 +249,7 @@ function SocialFeed({ currentUser }) {
   const [commentDrafts, setCommentDrafts] = useState({});
   const [status, setStatus] = useState('');
   const loadPosts = async () => {
-    const { data, error } = await supabase.from('posts').select('id,content,topic,created_at,author_id,profiles(display_name),post_likes(user_id),comments(id,content,created_at,author_id,profiles(display_name))').order('created_at', { ascending: false }).limit(50);
+    const { data, error } = await supabase.from('posts').select('id,content,topic,created_at,author_id,profiles!posts_author_id_fkey(display_name),post_likes(user_id),comments(id,content,created_at,author_id,profiles(display_name))').order('created_at', { ascending: false }).limit(50);
     if (!error) setPosts(data || []);
   };
   useEffect(() => {
