@@ -265,7 +265,7 @@ function SocialFeed({ currentUser }) {
     if (authError || !user) return setStatus('登录状态已失效，请退出后重新登录。');
     await supabase.from('profiles').upsert({ id: user.id, display_name: currentUser.name }, { onConflict: 'id' });
     const { error } = await supabase.from('posts').insert({ author_id: user.id, content: text, topic });
-    if (error) setStatus(`发布失败：${error.message}`);
+    if (error) { console.error('发布动态失败', error); setStatus('发布失败，请检查登录状态后重试。'); }
     else { setContent(''); setStatus('已发布到学习广场。'); await loadPosts(); }
   };
   const toggleLike = async (post) => {
