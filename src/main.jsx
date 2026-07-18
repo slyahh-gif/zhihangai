@@ -81,12 +81,21 @@ const defaultFuturePlan = [
 
 const defaultWeeklyCheckins = [false, false, false, false, false, false, false];
 
-function readWeeklyCheckins(email) {
+function getWeekKey() {
+  const date = new Date();
+  const mondayOffset = (date.getDay() + 6) % 7;
+  date.setDate(date.getDate() - mondayOffset);
+  return date.toISOString().slice(0, 10);
+}
+
+function readCheckinState(email) {
   try {
     const saved = JSON.parse(localStorage.getItem(`zhihang-ai-checkins-${email}`) || 'null');
-    return Array.isArray(saved) && saved.length === 7 ? saved : defaultWeeklyCheckins;
+    const makeupCards = Math.min(5, Math.max(0, saved?.makeupCards || 0));
+    if (saved?.weekKey === getWeekKey() && Array.isArray(saved.checkins) && saved.checkins.length === 7) return { ...saved, makeupCards };
+    return { weekKey: getWeekKey(), checkins: defaultWeeklyCheckins, makeupCards, rewardGranted: false };
   } catch {
-    return defaultWeeklyCheckins;
+    return { weekKey: getWeekKey(), checkins: defaultWeeklyCheckins, makeupCards: 0, rewardGranted: false };
   }
 }
 
@@ -114,7 +123,7 @@ function evaluateTrainingResponse(response) {
   return { score, level, lengthScore, clarityScore, collaborationScore, actionScore, advice: missing.length ? `下一次建议重点补充：${missing.join('；')}。` : '表达完整，下一次可尝试把任务拆成更具体的时间节点。' };
 }
 
-function GrowthPlanPanel({ complete, futurePlan, onPlanChange, onBackHome, checkins, onCheckinToggle }) {
+function GrowthPlanPanel({ complete, futurePlan, onPlanChange, onBackHome, checkins, makeupCards, onCheckinToggle }) {
   const [newTask, setNewTask] = useState('');
   const update = (id, key, value) => onPlanChange(futurePlan.map((item) => item.id === id ? { ...item, [key]: value } : item));
   const addTask = () => {
@@ -124,7 +133,8 @@ function GrowthPlanPanel({ complete, futurePlan, onPlanChange, onBackHome, check
     setNewTask('');
   };
   const checkinCount = checkins.filter(Boolean).length;
-  return <section className="plan-workspace panel"><div className="workspace-hero"><span>成长路线</span><h2>未来 4 周训练计划</h2><p>首页已完成 {complete}/4 项。本页可直接调整任务名称、安排周次，并新增自己的训练项目。</p><button className="primary" onClick={onBackHome}>回到本周任务 <Icon name="arrow" size={17}/></button></div><section className="checkin-panel"><div className="checkin-heading"><div><span>本周学习打卡</span><p>完成当天学习后点击对应日期，记录你的学习习惯。</p></div><b>{checkinCount}/7 天</b></div><div className="checkin-days">{['周一', '周二', '周三', '周四', '周五', '周六', '周日'].map((day, index) => <button key={day} className={checkins[index] ? 'checked' : ''} onClick={() => onCheckinToggle(index)}><span>{day}</span><i>{checkins[index] ? <Icon name="check" size={17}/> : index + 1}</i><small>{checkins[index] ? '已学习' : '待打卡'}</small></button>)}</div></section><div className="plan-editor">{futurePlan.map((item, index) => <article className="plan-editor-row" key={item.id}><div className="plan-index">{index + 1}</div><select value={item.week} onChange={(event) => update(item.id, 'week', event.target.value)} aria-label={`${item.title} 的安排周次`}>{['第 1 周', '第 2 周', '第 3 周', '第 4 周', '第 5 周', '第 6 周'].map((week) => <option key={week}>{week}</option>)}</select><div><input value={item.title} onChange={(event) => update(item.id, 'title', event.target.value)} aria-label="训练任务名称"/><textarea value={item.goal} onChange={(event) => update(item.id, 'goal', event.target.value)} aria-label="训练任务目标"/></div></article>)}</div><div className="plan-add"><input value={newTask} onChange={(event) => setNewTask(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && addTask()} placeholder="输入想加入的训练任务，例如：完成一个 AI 智能体原型"/><button className="secondary" onClick={addTask}>新增训练任务</button></div></section>;
+  const todayIndex = (new Date().getDay() + 6) % 7;
+  return <section className="plan-workspace panel"><div className="workspace-hero"><span>成长路线</span><h2>未来 4 周训练计划</h2><p>首页已完成 {complete}/4 项。本页可直接调整任务名称、安排周次，并新增自己的训练项目。</p><button className="primary" onClick={onBackHome}>回到本周任务 <Icon name="arrow" size={17}/></button></div><section className="checkin-panel"><div className="checkin-heading"><div><span>本周学习打卡</span><p>仅当天可打卡一次；本周累计 5 天学习，自动赠送 1 张补签卡。</p></div><div className="checkin-stats"><b>{checkinCount}/7 天</b><small>补签卡 {makeupCards}/5</small></div></div><div className="checkin-days">{['周一', '周二', '周三', '周四', '周五', '周六', '周日'].map((day, index) => <button key={day} className={`${checkins[index] ? 'checked' : ''} ${index === todayIndex ? 'today' : ''}`} disabled={checkins[index] || index !== todayIndex} onClick={() => onCheckinToggle(index)}><span>{day}</span><i>{checkins[index] ? <Icon name="check" size={17}/> : index + 1}</i><small>{checkins[index] ? '已学习' : index === todayIndex ? '今日打卡' : '未到日期'}</small></button>)}</div></section><div className="plan-editor">{futurePlan.map((item, index) => <article className="plan-editor-row" key={item.id}><div className="plan-index">{index + 1}</div><select value={item.week} onChange={(event) => update(item.id, 'week', event.target.value)} aria-label={`${item.title} 的安排周次`}>{['第 1 周', '第 2 周', '第 3 周', '第 4 周', '第 5 周', '第 6 周'].map((week) => <option key={week}>{week}</option>)}</select><div><input value={item.title} onChange={(event) => update(item.id, 'title', event.target.value)} aria-label="训练任务名称"/><textarea value={item.goal} onChange={(event) => update(item.id, 'goal', event.target.value)} aria-label="训练任务目标"/></div></article>)}</div><div className="plan-add"><input value={newTask} onChange={(event) => setNewTask(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && addTask()} placeholder="输入想加入的训练任务，例如：完成一个 AI 智能体原型"/><button className="secondary" onClick={addTask}>新增训练任务</button></div></section>;
 }
 
 function getAssistantReply(question, context) {
@@ -250,9 +260,9 @@ function App() {
   const [userMenu, setUserMenu] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('zhihang-ai-theme') || 'light');
   const [futurePlan, setFuturePlan] = useState(defaultFuturePlan);
-  const [weeklyCheckins, setWeeklyCheckins] = useState(() => {
+  const [checkinState, setCheckinState] = useState(() => {
     const session = JSON.parse(sessionStorage.getItem('zhihang-ai-session') || 'null');
-    return session ? readWeeklyCheckins(session.email) : defaultWeeklyCheckins;
+    return session ? readCheckinState(session.email) : { weekKey: getWeekKey(), checkins: defaultWeeklyCheckins, makeupCards: 0, rewardGranted: false };
   });
   const complete = done.filter(Boolean).length;
   const subtitle = useMemo(() => active === '首页' ? '科学规划职业路径，持续提升职场竞争力，遇见更好的自己。' : `这里是${active}模块的参考界面，后续可接入 Spring Boot 与百宝箱智能体。`, [active]);
@@ -263,9 +273,18 @@ function App() {
   const openInfo = (title, text) => setModal({ kind: 'info', title, text });
   const openSection = (label) => setActive(label);
   const finishAssessment = (answers) => { const result = calculateAssessment(answers); localStorage.setItem(`zhihang-ai-assessment-${currentUser.email}`, JSON.stringify(result)); setAssessmentResult(result); openInfo('测评完成', `综合得分 ${result.overall} 分。最适合的方向是“${result.primaryCareer.name}”：${result.primaryCareer.intro}`); };
-  const login = (user) => { setCurrentUser(user); setWeeklyCheckins(readWeeklyCheckins(user.email)); try { setAssessmentResult(JSON.parse(localStorage.getItem(`zhihang-ai-assessment-${user.email}`) || 'null')); } catch { setAssessmentResult(null); } };
-  const logout = () => { sessionStorage.removeItem('zhihang-ai-session'); setCurrentUser(null); setAssessmentResult(null); setWeeklyCheckins(defaultWeeklyCheckins); setUserMenu(false); setModal(null); };
-  const toggleCheckin = (index) => { const next = weeklyCheckins.map((value, itemIndex) => itemIndex === index ? !value : value); setWeeklyCheckins(next); localStorage.setItem(`zhihang-ai-checkins-${currentUser.email}`, JSON.stringify(next)); };
+  const login = (user) => { setCurrentUser(user); setCheckinState(readCheckinState(user.email)); try { setAssessmentResult(JSON.parse(localStorage.getItem(`zhihang-ai-assessment-${user.email}`) || 'null')); } catch { setAssessmentResult(null); } };
+  const logout = () => { sessionStorage.removeItem('zhihang-ai-session'); setCurrentUser(null); setAssessmentResult(null); setCheckinState({ weekKey: getWeekKey(), checkins: defaultWeeklyCheckins, makeupCards: 0, rewardGranted: false }); setUserMenu(false); setModal(null); };
+  const toggleCheckin = (index) => {
+    const todayIndex = (new Date().getDay() + 6) % 7;
+    if (index !== todayIndex || checkinState.checkins[index]) return;
+    const checkins = checkinState.checkins.map((value, itemIndex) => itemIndex === index ? true : value);
+    const reachedReward = checkins.filter(Boolean).length >= 5 && !checkinState.rewardGranted;
+    const next = { ...checkinState, checkins, rewardGranted: checkinState.rewardGranted || reachedReward, makeupCards: reachedReward ? Math.min(5, checkinState.makeupCards + 1) : checkinState.makeupCards };
+    setCheckinState(next);
+    localStorage.setItem(`zhihang-ai-checkins-${currentUser.email}`, JSON.stringify(next));
+    if (reachedReward) openInfo('获得补签卡', next.makeupCards >= 5 ? '本周打卡达标！补签卡已达到上限 5 张。' : `本周累计学习 5 天，获得 1 张补签卡。当前共有 ${next.makeupCards} 张。`);
+  };
   const requestLogout = () => { setUserMenu(false); setModal({ kind: 'confirm', title: '确认退出登录？', text: '退出后需要重新输入账号和密码才能进入职航 AI。' }); };
   const toggleTheme = () => setTheme((current) => { const next = current === 'light' ? 'dark' : 'light'; localStorage.setItem('zhihang-ai-theme', next); return next; });
   const requestAssessmentReset = () => setModal({ kind: 'reset', title: '确认清除测评结果？', text: '清除后，职业分数、雷达图和岗位建议会恢复为“待测评”状态。此操作仅影响当前账号。' });
@@ -317,7 +336,7 @@ function App() {
       </section>
       <section className="training-section"><div className="section-heading"><div><h2>职场训练场</h2><p>沉浸式场景训练，让每一次练习更接近真实工作。</p></div><button onClick={() => openSection('模拟训练')}>全部训练 <Icon name="arrow" size={17}/></button></div><div className="scenario-grid">{scenarios.map((s, i) => <article className={`scenario ${s.color}`} key={s.title}><div className="scene-visual"><div className="scene-circle"><Icon name={s.icon} size={42}/></div><div className="scene-lines"><i/><i/><i/></div></div><div className="scenario-body"><div><h3>{s.title}</h3><span>{s.tag}</span></div><p>{s.text}</p><footer><small><Icon name="clock" size={15}/> 预计 {i === 1 ? 50 : 60} 分钟</small><button onClick={() => startScenario(s)}>立即训练 <Icon name="arrow" size={16}/></button></footer></div></article>)}</div>
       </section>
-      <footer className="privacy"><Icon name="lock" size={15}/> 你的职业数据仅用于生成个性化建议，可在“我的报告”中随时删除。</footer></> : active === '成长计划' ? <GrowthPlanPanel complete={complete} futurePlan={futurePlan} onPlanChange={setFuturePlan} onBackHome={() => setActive('首页')} checkins={weeklyCheckins} onCheckinToggle={toggleCheckin}/> : <section className="workspace panel"><div className="workspace-hero"><span>{selectedContent.eyebrow}</span><h2>{selectedContent.title}</h2><p>{selectedContent.description}</p><button className="primary" onClick={active === '设置' ? toggleTheme : active === '职业测评' || (active === '我的报告' && !hasAssessment) ? startTest : () => openInfo('已保存', '这是比赛演示版的本地交互结果；后续可以接入 Spring Boot 与 MySQL 保存真实数据。')}>{active === '设置' ? `切换为${theme === 'dark' ? '浅色' : '深色'}模式` : active === '职业测评' || (active === '我的报告' && !hasAssessment) ? '开始/重新测评' : '保存并查看反馈'} <Icon name="arrow" size={17}/></button></div><div className="workspace-grid">{selectedContent.cards.map(([title, text], index) => <article className="workspace-card" key={title}><div className="workspace-icon"><Icon name={active === '模拟训练' ? 'flask' : active === '我的报告' ? 'file' : active === '设置' ? 'settings' : 'compass'} size={22}/></div><h3>{title}</h3><p>{text}</p><button onClick={active === '设置' && title === '主题外观' ? toggleTheme : active === '设置' && title === '测评数据' ? requestAssessmentReset : () => handleWorkspaceAction(title, text, index)}>{active === '设置' && title === '主题外观' ? '切换模式' : active === '设置' && title === '测评数据' ? '清除并重新测评' : workspaceActionLabel(title)} <Icon name="arrow" size={16}/></button></article>)}</div></section>}
+      <footer className="privacy"><Icon name="lock" size={15}/> 你的职业数据仅用于生成个性化建议，可在“我的报告”中随时删除。</footer></> : active === '成长计划' ? <GrowthPlanPanel complete={complete} futurePlan={futurePlan} onPlanChange={setFuturePlan} onBackHome={() => setActive('首页')} checkins={checkinState.checkins} makeupCards={checkinState.makeupCards} onCheckinToggle={toggleCheckin}/> : <section className="workspace panel"><div className="workspace-hero"><span>{selectedContent.eyebrow}</span><h2>{selectedContent.title}</h2><p>{selectedContent.description}</p><button className="primary" onClick={active === '设置' ? toggleTheme : active === '职业测评' || (active === '我的报告' && !hasAssessment) ? startTest : () => openInfo('已保存', '这是比赛演示版的本地交互结果；后续可以接入 Spring Boot 与 MySQL 保存真实数据。')}>{active === '设置' ? `切换为${theme === 'dark' ? '浅色' : '深色'}模式` : active === '职业测评' || (active === '我的报告' && !hasAssessment) ? '开始/重新测评' : '保存并查看反馈'} <Icon name="arrow" size={17}/></button></div><div className="workspace-grid">{selectedContent.cards.map(([title, text], index) => <article className="workspace-card" key={title}><div className="workspace-icon"><Icon name={active === '模拟训练' ? 'flask' : active === '我的报告' ? 'file' : active === '设置' ? 'settings' : 'compass'} size={22}/></div><h3>{title}</h3><p>{text}</p><button onClick={active === '设置' && title === '主题外观' ? toggleTheme : active === '设置' && title === '测评数据' ? requestAssessmentReset : () => handleWorkspaceAction(title, text, index)}>{active === '设置' && title === '主题外观' ? '切换模式' : active === '设置' && title === '测评数据' ? '清除并重新测评' : workspaceActionLabel(title)} <Icon name="arrow" size={16}/></button></article>)}</div></section>}
     </section>
     <SmartAssistant complete={complete} result={assessmentResult}/>
     {modal && <div className="modal-backdrop" onMouseDown={() => setModal(null)}><section className="modal" onMouseDown={e => e.stopPropagation()}>{modal === 'test' ? <><button className="modal-close" onClick={() => setModal(null)}>×</button><div className="modal-icon"><Icon name="compass" size={30}/></div><h2>开始职业测评</h2><p>第 {testStep + 1}/{assessmentQuestions.length} 题 · 根据你的真实情况作答，结果仅用于生成学习建议。</p><div className="question">{assessmentQuestions[testStep].question}</div><div className="options">{assessmentQuestions[testStep].options.map((option, optionIndex) => <button key={option} onClick={() => { const nextAnswers = [...testAnswers]; nextAnswers[testStep] = optionIndex; setTestAnswers(nextAnswers); testStep < assessmentQuestions.length - 1 ? setTestStep(testStep + 1) : finishAssessment(nextAnswers); }}>{option}<Icon name="arrow" size={16}/></button>)}</div></> : modal.kind === 'reset' ? <><button className="modal-close" onClick={() => setModal(null)}>×</button><div className="modal-icon"><Icon name="file" size={30}/></div><h2>{modal.title}</h2><p>{modal.text}</p><div className="confirm-actions"><button className="secondary" onClick={() => setModal(null)}>取消</button><button className="primary" onClick={resetAssessment}>确认清除</button></div></> : modal.kind === 'confirm' ? <><button className="modal-close" onClick={() => setModal(null)}>×</button><div className="modal-icon"><Icon name="lock" size={30}/></div><h2>{modal.title}</h2><p>{modal.text}</p><div className="confirm-actions"><button className="secondary" onClick={() => setModal(null)}>暂不退出</button><button className="primary" onClick={logout}>确认退出</button></div></> : modal.kind === 'feedback' ? <><button className="modal-close" onClick={() => setModal(null)}>×</button><div className="modal-icon"><Icon name="chart" size={30}/></div><h2>训练评分：{modal.score} 分 · {modal.level}</h2><p>回答完整度 {modal.lengthScore}/30 · 表达清晰度 {modal.clarityScore}/25 · 协作意识 {modal.collaborationScore}/25 · 行动方案 {modal.actionScore}/20</p><div className="dialogue"><b>改进建议</b><span>{modal.advice}</span></div><button className="primary wide" onClick={() => setModal(null)}>查看并继续训练 <Icon name="check"/></button></> : modal.kind === 'info' ? <><button className="modal-close" onClick={() => setModal(null)}>×</button><div className="modal-icon"><Icon name="spark" size={30}/></div><h2>{modal.title}</h2><p>{modal.text}</p><button className="primary wide" onClick={() => setModal(null)}>我知道了 <Icon name="check"/></button></> : <><button className="modal-close" onClick={() => setModal(null)}>×</button><div className="modal-icon"><Icon name="spark" size={30}/></div><h2>{modal.title}</h2><p>{modal.text}</p><div className="dialogue"><b>AI 教练 · 训练题目</b><span>{modal.prompt}</span></div><textarea value={trainingResponse} onChange={(event) => setTrainingResponse(event.target.value)} placeholder="输入你的回应。建议结合题目说明具体任务、时间、协作对象和可执行方案。"/><button className="primary wide" onClick={submitTraining}><Icon name="play"/>提交并获取评分</button></>}</section></div>}
