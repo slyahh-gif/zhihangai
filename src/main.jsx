@@ -261,8 +261,11 @@ function SocialFeed({ currentUser }) {
     event.preventDefault();
     const text = content.trim();
     if (!text) return setStatus('先写下一句想分享的学习动态吧。');
-    const { error } = await supabase.from('posts').insert({ author_id: currentUser.id, content: text, topic });
-    if (error) setStatus('发布失败，请稍后重试。');
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) return setStatus('登录状态已失效，请退出后重新登录。');
+    await supabase.from('profiles').upsert({ id: user.id, display_name: currentUser.name }, { onConflict: 'id' });
+    const { error } = await supabase.from('posts').insert({ author_id: user.id, content: text, topic });
+    if (error) setStatus(`发布失败：${error.message}`);
     else { setContent(''); setStatus('已发布到学习广场。'); await loadPosts(); }
   };
   const toggleLike = async (post) => {
