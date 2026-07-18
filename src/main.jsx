@@ -359,7 +359,12 @@ function App() {
   const openInfo = (title, text) => setModal({ kind: 'info', title, text });
   const openSection = (label) => setActive(label);
   const finishAssessment = (answers) => { const result = calculateAssessment(answers); localStorage.setItem(`zhihang-ai-assessment-${currentUser.email}`, JSON.stringify(result)); setAssessmentResult(result); openInfo('测评完成', `综合得分 ${result.overall} 分。最适合的方向是“${result.primaryCareer.name}”：${result.primaryCareer.intro}`); };
-  const login = (user) => { setCurrentUser(user); setCheckinState(readCheckinState(user.email)); try { setAssessmentResult(JSON.parse(localStorage.getItem(`zhihang-ai-assessment-${user.email}`) || 'null')); } catch { setAssessmentResult(null); } };
+  const login = async (user) => {
+    if (user.id) await supabase.from('profiles').upsert({ id: user.id, display_name: user.name }, { onConflict: 'id' });
+    setCurrentUser(user);
+    setCheckinState(readCheckinState(user.email));
+    try { setAssessmentResult(JSON.parse(localStorage.getItem(`zhihang-ai-assessment-${user.email}`) || 'null')); } catch { setAssessmentResult(null); }
+  };
   useEffect(() => {
     const applySession = (session) => {
       if (!session?.user) return;
