@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
+import { supabase } from './supabase';
 
 const Icon = ({ name, size = 20, stroke = 1.9 }) => {
   const paths = {
@@ -201,6 +202,75 @@ const sectionContent = {
   },
 };
 
+function SupabaseAuthGate({ onAuthenticated }) {
+  const [mode, setMode] = useState('login');
+  const [form, setForm] = useState({ name: '', email: '', password: '' });
+  const [message, setMessage] = useState('');
+  const [loading, setLoading] = useState(false);
+  const update = (key) => (event) => setForm((value) => ({ ...value, [key]: event.target.value }));
+  const submit = async (event) => {
+    event.preventDefault();
+    const email = form.email.trim().toLowerCase();
+    const name = form.name.trim();
+    if (!email || !form.password || (mode === 'register' && !name)) {
+      setMessage('请完整填写注册信息。');
+      return;
+    }
+    setLoading(true);
+    setMessage('');
+    if (mode === 'register') {
+      const { data, error } = await supabase.auth.signUp({ email, password: form.password, options: { data: { display_name: name } } });
+      if (error) setMessage(error.message);
+      else if (data.session) onAuthenticated({ id: data.user.id, name, email });
+      else setMessage('注册成功，请前往邮箱完成验证后再登录。');
+    } else {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password: form.password });
+      if (error) setMessage('邮箱或密码不正确，请重试。');
+      else onAuthenticated({ id: data.user.id, name: data.user.user_metadata?.display_name || email.split('@')[0], email: data.user.email });
+    }
+    setLoading(false);
+  };
+  return <main className="auth-page"><section className="auth-intro"><div className="auth-brand"><div className="brand-mark"><Icon name="compass" size={25}/></div>职航 <b>AI</b></div><div className="auth-copy"><span>2026 服务外包创新应用大赛 A02</span><h1>从职业画像开始，<br/>向真实实习岗位靠近。</h1><p>注册后即可保存职业测评、成长计划，并在学习广场与其他同学交流项目进展。</p></div><div className="auth-points"><div><Icon name="lock"/> 安全账号登录</div><div><Icon name="spark"/> AI 学习教练</div><div><Icon name="chart"/> 成长记录同步</div></div></section><section className="auth-panel"><div className="auth-card"><div className="auth-tabs"><button className={mode === 'login' ? 'selected' : ''} onClick={() => { setMode('login'); setMessage(''); }}>登录</button><button className={mode === 'register' ? 'selected' : ''} onClick={() => { setMode('register'); setMessage(''); }}>注册</button></div><h2>{mode === 'login' ? '欢迎回来' : '创建你的账号'}</h2><p>{mode === 'login' ? '登录后继续查看你的学习数据与广场动态。' : '使用邮箱创建账号，开始保存你的学习成长记录。'}</p><form onSubmit={submit}>{mode === 'register' && <label>昵称<input value={form.name} onChange={update('name')} placeholder="例如：小明" autoComplete="name"/></label>}<label>邮箱<input type="email" value={form.email} onChange={update('email')} placeholder="name@example.com" autoComplete="email"/></label><label>密码<input type="password" value={form.password} onChange={update('password')} placeholder="至少 6 位" minLength="6" autoComplete={mode === 'login' ? 'current-password' : 'new-password'}/></label>{message && <div className="auth-message">{message}</div>}<button className="primary auth-submit" type="submit" disabled={loading}>{loading ? '处理中…' : mode === 'login' ? '登录职航 AI' : '注册并开始'} <Icon name="arrow" size={17}/></button></form><small>{mode === 'login' ? '还没有账号？' : '已有账号？'} <button onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setMessage(''); }}>{mode === 'login' ? '立即注册' : '去登录'}</button></small></div></section></main>;
+}
+
+function SocialFeed({ currentUser }) {
+  const [posts, setPosts] = useState([]);
+  const [content, setContent] = useState('');
+  const [topic, setTopic] = useState('学习记录');
+  const [commentDrafts, setCommentDrafts] = useState({});
+  const [status, setStatus] = useState('');
+  const loadPosts = async () => {
+    const { data, error } = await supabase.from('posts').select('id,content,topic,created_at,author_id,profiles(display_name),post_likes(user_id),comments(id,content,created_at,author_id,profiles(display_name))').order('created_at', { ascending: false }).limit(50);
+    if (!error) setPosts(data || []);
+  };
+  useEffect(() => {
+    loadPosts();
+    const channel = supabase.channel('learning-square-live').on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, loadPosts).on('postgres_changes', { event: '*', schema: 'public', table: 'comments' }, loadPosts).on('postgres_changes', { event: '*', schema: 'public', table: 'post_likes' }, loadPosts).subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+  const publish = async (event) => {
+    event.preventDefault();
+    const text = content.trim();
+    if (!text) return setStatus('先写下一句想分享的学习动态吧。');
+    const { error } = await supabase.from('posts').insert({ author_id: currentUser.id, content: text, topic });
+    if (error) setStatus('发布失败，请稍后重试。');
+    else { setContent(''); setStatus('已发布到学习广场。'); await loadPosts(); }
+  };
+  const toggleLike = async (post) => {
+    const liked = (post.post_likes || []).some((item) => item.user_id === currentUser.id);
+    if (liked) await supabase.from('post_likes').delete().eq('post_id', post.id).eq('user_id', currentUser.id);
+    else await supabase.from('post_likes').insert({ post_id: post.id, user_id: currentUser.id });
+    await loadPosts();
+  };
+  const addComment = async (postId) => {
+    const text = (commentDrafts[postId] || '').trim();
+    if (!text) return;
+    const { error } = await supabase.from('comments').insert({ post_id: postId, author_id: currentUser.id, content: text });
+    if (!error) { setCommentDrafts((drafts) => ({ ...drafts, [postId]: '' })); await loadPosts(); }
+  };
+  return <section className="social-feed"><section className="social-composer panel"><div><span className="social-kicker">学习广场</span><h2>记录进度，也向同行提问</h2><p>注册用户发布的动态会实时出现在这里。请友善交流，不发布个人隐私信息。</p></div><form onSubmit={publish}><textarea value={content} maxLength="500" onChange={(event) => setContent(event.target.value)} placeholder="例如：今天完成了 Spring Boot 登录接口，下一步准备接入 MySQL。"/><div className="composer-actions"><select value={topic} onChange={(event) => setTopic(event.target.value)}><option>学习记录</option><option>项目进度</option><option>求助交流</option><option>经验分享</option></select><small>{content.length}/500</small><button className="primary" type="submit">发布动态 <Icon name="arrow" size={16}/></button></div>{status && <p className="social-status">{status}</p>}</form></section><section className="social-stream"><div className="social-stream-head"><h2>最新动态</h2><button onClick={loadPosts}>刷新</button></div>{posts.length === 0 ? <div className="social-empty panel"><Icon name="spark" size={30}/><b>还没有动态</b><span>成为第一个分享学习进度的人吧。</span></div> : posts.map((post) => { const liked = (post.post_likes || []).some((item) => item.user_id === currentUser.id); const comments = (post.comments || []).slice().sort((a, b) => new Date(a.created_at) - new Date(b.created_at)); return <article className="post-card panel" key={post.id}><header><div className="post-avatar">{(post.profiles?.display_name || '同').slice(0, 1)}</div><div><b>{post.profiles?.display_name || '学习同学'}</b><small>{new Date(post.created_at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</small></div><span>{post.topic}</span></header><p className="post-content">{post.content}</p><div className="post-actions"><button className={liked ? 'liked' : ''} onClick={() => toggleLike(post)}>{liked ? '已点赞' : '点赞'} · {post.post_likes?.length || 0}</button><span>{comments.length} 条评论</span></div>{comments.length > 0 && <div className="comments">{comments.map((comment) => <p key={comment.id}><b>{comment.profiles?.display_name || '学习同学'}：</b>{comment.content}</p>)}</div>}<div className="comment-box"><input value={commentDrafts[post.id] || ''} maxLength="300" onChange={(event) => setCommentDrafts((drafts) => ({ ...drafts, [post.id]: event.target.value }))} onKeyDown={(event) => event.key === 'Enter' && addComment(post.id)} placeholder="写下你的想法…"/><button onClick={() => addComment(post.id)}>评论</button></div></article>; })}</section></section>;
+}
+
 function AuthGate({ onAuthenticated }) {
   const [mode, setMode] = useState('login');
   const [form, setForm] = useState({ name: '', email: '', password: '' });
@@ -256,11 +326,8 @@ function Radar({ dimensions }) {
 }
 
 function App() {
-  const [currentUser, setCurrentUser] = useState(() => JSON.parse(sessionStorage.getItem('zhihang-ai-session') || 'null'));
-  const [assessmentResult, setAssessmentResult] = useState(() => {
-    const session = JSON.parse(sessionStorage.getItem('zhihang-ai-session') || 'null');
-    try { return session ? JSON.parse(localStorage.getItem(`zhihang-ai-assessment-${session.email}`) || 'null') : null; } catch { return null; }
-  });
+  const [currentUser, setCurrentUser] = useState(null);
+  const [assessmentResult, setAssessmentResult] = useState(null);
   const [active, setActive] = useState('首页');
   const [done, setDone] = useState([false, false, false, false]);
   const [modal, setModal] = useState(null);
@@ -270,10 +337,7 @@ function App() {
   const [userMenu, setUserMenu] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('zhihang-ai-theme') || 'light');
   const [futurePlan, setFuturePlan] = useState(defaultFuturePlan);
-  const [checkinState, setCheckinState] = useState(() => {
-    const session = JSON.parse(sessionStorage.getItem('zhihang-ai-session') || 'null');
-    return session ? readCheckinState(session.email) : { weekKey: getWeekKey(), checkins: defaultWeeklyCheckins, makeupCards: 0, rewardGranted: false };
-  });
+  const [checkinState, setCheckinState] = useState({ weekKey: getWeekKey(), checkins: defaultWeeklyCheckins, makeupCards: 0, rewardGranted: false });
   const complete = done.filter(Boolean).length;
   const yearStart = new Date(new Date().getFullYear(), 0, 0);
   const dayOfYear = Math.floor((Date.now() - yearStart.getTime()) / 86400000);
@@ -287,7 +351,20 @@ function App() {
   const openSection = (label) => setActive(label);
   const finishAssessment = (answers) => { const result = calculateAssessment(answers); localStorage.setItem(`zhihang-ai-assessment-${currentUser.email}`, JSON.stringify(result)); setAssessmentResult(result); openInfo('测评完成', `综合得分 ${result.overall} 分。最适合的方向是“${result.primaryCareer.name}”：${result.primaryCareer.intro}`); };
   const login = (user) => { setCurrentUser(user); setCheckinState(readCheckinState(user.email)); try { setAssessmentResult(JSON.parse(localStorage.getItem(`zhihang-ai-assessment-${user.email}`) || 'null')); } catch { setAssessmentResult(null); } };
-  const logout = () => { sessionStorage.removeItem('zhihang-ai-session'); setCurrentUser(null); setAssessmentResult(null); setCheckinState({ weekKey: getWeekKey(), checkins: defaultWeeklyCheckins, makeupCards: 0, rewardGranted: false }); setUserMenu(false); setModal(null); };
+  useEffect(() => {
+    const applySession = (session) => {
+      if (!session?.user) return;
+      const user = { id: session.user.id, name: session.user.user_metadata?.display_name || session.user.email.split('@')[0], email: session.user.email };
+      login(user);
+    };
+    supabase.auth.getSession().then(({ data }) => applySession(data.session));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) applySession(session);
+      else { setCurrentUser(null); setAssessmentResult(null); }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+  const logout = async () => { await supabase.auth.signOut(); sessionStorage.removeItem('zhihang-ai-session'); setCurrentUser(null); setAssessmentResult(null); setCheckinState({ weekKey: getWeekKey(), checkins: defaultWeeklyCheckins, makeupCards: 0, rewardGranted: false }); setUserMenu(false); setModal(null); };
   const toggleCheckin = (index) => {
     const todayIndex = (new Date().getDay() + 6) % 7;
     if (index !== todayIndex || checkinState.checkins[index]) return;
@@ -331,11 +408,11 @@ function App() {
     if (active === '我的报告') return !hasAssessment ? '开始测评' : title === '提升建议' ? '加入成长计划' : '查看详细画像';
     return '查看详情';
   };
-  if (!currentUser) return <AuthGate onAuthenticated={login}/>;
+  if (!currentUser) return <SupabaseAuthGate onAuthenticated={login}/>;
   return <main className={`app-shell theme-${theme}`}>
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark"><Icon name="compass" size={23}/></div><span>职航 <b>AI</b></span></div>
-      {active === '设置' ? <><nav className="settings-nav"><span className="nav-caption">账号设置</span><button className="nav-item active"><Icon name="settings"/><span>个性化设置</span></button><button className="nav-item exit-settings" onClick={() => setActive('首页')}><Icon name="arrow"/><span>退出设置</span></button></nav><div className="sidebar-settings-note"><Icon name="lock" size={16}/><span>设置仅保存在当前浏览器。</span></div></> : <><nav><span className="nav-caption">工作台</span>{nav.map(([label, icon], index) => <React.Fragment key={label}>{index === 1 && <span className="nav-caption nav-caption-gap">职业成长</span>}<button className={active === label ? 'nav-item active' : 'nav-item'} onClick={() => label === '首页' ? setActive(label) : openSection(label)}><Icon name={icon}/><span>{label}</span></button></React.Fragment>)}</nav><div className="sidebar-progress"><span>本周学习进度</span><b>{complete}/4</b><div><i style={{ width: `${complete * 25}%` }}/></div></div></>}
+      {active === '设置' ? <><nav className="settings-nav"><span className="nav-caption">账号设置</span><button className="nav-item active"><Icon name="settings"/><span>个性化设置</span></button><button className="nav-item exit-settings" onClick={() => setActive('首页')}><Icon name="arrow"/><span>退出设置</span></button></nav><div className="sidebar-settings-note"><Icon name="lock" size={16}/><span>设置仅保存在当前浏览器。</span></div></> : <><nav><span className="nav-caption">工作台</span>{[...nav, ['学习广场', 'spark']].map(([label, icon], index) => <React.Fragment key={label}>{index === 1 && <span className="nav-caption nav-caption-gap">职业成长</span>}<button className={active === label ? 'nav-item active' : 'nav-item'} onClick={() => label === '首页' ? setActive(label) : openSection(label)}><Icon name={icon}/><span>{label}</span></button></React.Fragment>)}</nav><div className="sidebar-progress"><span>本周学习进度</span><b>{complete}/4</b><div><i style={{ width: `${complete * 25}%` }}/></div></div></>}
       <div className="user-menu-wrap"><button className="user-card" onClick={() => setUserMenu((open) => !open)} aria-expanded={userMenu} title="打开账号菜单"><div className="avatar">{currentUser.name.slice(0, 1)}</div><div><b>{currentUser.name}，你好</b><small>{currentUser.email}</small></div></button>{userMenu && <div className="user-menu"><span>账号菜单</span><button className="menu-setting" onClick={() => { setUserMenu(false); openSection('设置'); }}><span><Icon name="settings" size={15}/> 设置</span><Icon name="arrow" size={15}/></button><button onClick={requestLogout}>退出登录 <Icon name="arrow" size={15}/></button></div>}</div>
     </aside>
     <section className="content">
@@ -349,7 +426,7 @@ function App() {
       </section>
       <section className="training-section"><div className="section-heading"><div><h2>职场训练场</h2><p>沉浸式场景训练，让每一次练习更接近真实工作。</p></div><button onClick={() => openSection('模拟训练')}>全部训练 <Icon name="arrow" size={17}/></button></div><div className="scenario-grid">{scenarios.map((s, i) => <article className={`scenario ${s.color}`} key={s.title}><div className="scene-visual"><div className="scene-circle"><Icon name={s.icon} size={42}/></div><div className="scene-lines"><i/><i/><i/></div></div><div className="scenario-body"><div><h3>{s.title}</h3><span>{s.tag}</span></div><p>{s.text}</p><footer><small><Icon name="clock" size={15}/> 预计 {i === 1 ? 50 : 60} 分钟</small><button onClick={() => startScenario(s)}>立即训练 <Icon name="arrow" size={16}/></button></footer></div></article>)}</div>
       </section>
-      <footer className="privacy"><Icon name="lock" size={15}/> 你的职业数据仅用于生成个性化建议，可在“我的报告”中随时删除。</footer></> : active === '成长计划' ? <GrowthPlanPanel complete={complete} futurePlan={futurePlan} onPlanChange={setFuturePlan} onBackHome={() => setActive('首页')} checkins={checkinState.checkins} makeupCards={checkinState.makeupCards} onCheckinToggle={toggleCheckin}/> : <section className="workspace panel"><div className="workspace-hero"><span>{selectedContent.eyebrow}</span><h2>{selectedContent.title}</h2><p>{selectedContent.description}</p><button className="primary" onClick={active === '设置' ? toggleTheme : active === '职业测评' || (active === '我的报告' && !hasAssessment) ? startTest : () => openInfo('已保存', '这是比赛演示版的本地交互结果；后续可以接入 Spring Boot 与 MySQL 保存真实数据。')}>{active === '设置' ? `切换为${theme === 'dark' ? '浅色' : '深色'}模式` : active === '职业测评' || (active === '我的报告' && !hasAssessment) ? '开始/重新测评' : '保存并查看反馈'} <Icon name="arrow" size={17}/></button></div><div className="workspace-grid">{selectedContent.cards.map(([title, text], index) => <article className="workspace-card" key={title}><div className="workspace-icon"><Icon name={active === '模拟训练' ? 'flask' : active === '我的报告' ? 'file' : active === '设置' ? 'settings' : 'compass'} size={22}/></div><h3>{title}</h3><p>{text}</p><button onClick={active === '设置' && title === '主题外观' ? toggleTheme : active === '设置' && title === '测评数据' ? requestAssessmentReset : () => handleWorkspaceAction(title, text, index)}>{active === '设置' && title === '主题外观' ? '切换模式' : active === '设置' && title === '测评数据' ? '清除并重新测评' : workspaceActionLabel(title)} <Icon name="arrow" size={16}/></button></article>)}</div></section>}
+      <footer className="privacy"><Icon name="lock" size={15}/> 你的职业数据仅用于生成个性化建议，可在“我的报告”中随时删除。</footer></> : active === '学习广场' ? <SocialFeed currentUser={currentUser}/> : active === '成长计划' ? <GrowthPlanPanel complete={complete} futurePlan={futurePlan} onPlanChange={setFuturePlan} onBackHome={() => setActive('首页')} checkins={checkinState.checkins} makeupCards={checkinState.makeupCards} onCheckinToggle={toggleCheckin}/> : <section className="workspace panel"><div className="workspace-hero"><span>{selectedContent.eyebrow}</span><h2>{selectedContent.title}</h2><p>{selectedContent.description}</p><button className="primary" onClick={active === '设置' ? toggleTheme : active === '职业测评' || (active === '我的报告' && !hasAssessment) ? startTest : () => openInfo('已保存', '这是比赛演示版的本地交互结果；后续可以接入 Spring Boot 与 MySQL 保存真实数据。')}>{active === '设置' ? `切换为${theme === 'dark' ? '浅色' : '深色'}模式` : active === '职业测评' || (active === '我的报告' && !hasAssessment) ? '开始/重新测评' : '保存并查看反馈'} <Icon name="arrow" size={17}/></button></div><div className="workspace-grid">{selectedContent.cards.map(([title, text], index) => <article className="workspace-card" key={title}><div className="workspace-icon"><Icon name={active === '模拟训练' ? 'flask' : active === '我的报告' ? 'file' : active === '设置' ? 'settings' : 'compass'} size={22}/></div><h3>{title}</h3><p>{text}</p><button onClick={active === '设置' && title === '主题外观' ? toggleTheme : active === '设置' && title === '测评数据' ? requestAssessmentReset : () => handleWorkspaceAction(title, text, index)}>{active === '设置' && title === '主题外观' ? '切换模式' : active === '设置' && title === '测评数据' ? '清除并重新测评' : workspaceActionLabel(title)} <Icon name="arrow" size={16}/></button></article>)}</div></section>}
     </section>
     <SmartAssistant complete={complete} result={assessmentResult}/>
     {modal && <div className="modal-backdrop" onMouseDown={() => setModal(null)}><section className="modal" onMouseDown={e => e.stopPropagation()}>{modal === 'test' ? <><button className="modal-close" onClick={() => setModal(null)}>×</button><div className="modal-icon"><Icon name="compass" size={30}/></div><h2>开始职业测评</h2><p>第 {testStep + 1}/{assessmentQuestions.length} 题 · 根据你的真实情况作答，结果仅用于生成学习建议。</p><div className="question">{assessmentQuestions[testStep].question}</div><div className="options">{assessmentQuestions[testStep].options.map((option, optionIndex) => <button key={option} onClick={() => { const nextAnswers = [...testAnswers]; nextAnswers[testStep] = optionIndex; setTestAnswers(nextAnswers); testStep < assessmentQuestions.length - 1 ? setTestStep(testStep + 1) : finishAssessment(nextAnswers); }}>{option}<Icon name="arrow" size={16}/></button>)}</div></> : modal.kind === 'reset' ? <><button className="modal-close" onClick={() => setModal(null)}>×</button><div className="modal-icon"><Icon name="file" size={30}/></div><h2>{modal.title}</h2><p>{modal.text}</p><div className="confirm-actions"><button className="secondary" onClick={() => setModal(null)}>取消</button><button className="primary" onClick={resetAssessment}>确认清除</button></div></> : modal.kind === 'confirm' ? <><button className="modal-close" onClick={() => setModal(null)}>×</button><div className="modal-icon"><Icon name="lock" size={30}/></div><h2>{modal.title}</h2><p>{modal.text}</p><div className="confirm-actions"><button className="secondary" onClick={() => setModal(null)}>暂不退出</button><button className="primary" onClick={logout}>确认退出</button></div></> : modal.kind === 'feedback' ? <><button className="modal-close" onClick={() => setModal(null)}>×</button><div className="modal-icon"><Icon name="chart" size={30}/></div><h2>训练评分：{modal.score} 分 · {modal.level}</h2><p>回答完整度 {modal.lengthScore}/30 · 表达清晰度 {modal.clarityScore}/25 · 协作意识 {modal.collaborationScore}/25 · 行动方案 {modal.actionScore}/20</p><div className="dialogue"><b>改进建议</b><span>{modal.advice}</span></div><button className="primary wide" onClick={() => setModal(null)}>查看并继续训练 <Icon name="check"/></button></> : modal.kind === 'info' ? <><button className="modal-close" onClick={() => setModal(null)}>×</button><div className="modal-icon"><Icon name="spark" size={30}/></div><h2>{modal.title}</h2><p>{modal.text}</p><button className="primary wide" onClick={() => setModal(null)}>我知道了 <Icon name="check"/></button></> : <><button className="modal-close" onClick={() => setModal(null)}>×</button><div className="modal-icon"><Icon name="spark" size={30}/></div><h2>{modal.title}</h2><p>{modal.text}</p><div className="dialogue"><b>AI 教练 · 训练题目</b><span>{modal.prompt}</span></div><textarea value={trainingResponse} onChange={(event) => setTrainingResponse(event.target.value)} placeholder="输入你的回应。建议结合题目说明具体任务、时间、协作对象和可执行方案。"/><button className="primary wide" onClick={submitTraining}><Icon name="play"/>提交并获取评分</button></>}</section></div>}
