@@ -177,8 +177,9 @@ function AuthGate({ onAuthenticated }) {
   const submit = (event) => {
     event.preventDefault();
     const name = form.name.trim();
-    const email = form.email.trim().toLowerCase();
-    if (!email || !form.password || (mode === 'register' && !name)) {
+    const account = form.email.trim();
+    const email = account.toLowerCase();
+    if (!account || !form.password || (mode === 'register' && !name)) {
       setMessage('请把必填信息填写完整。');
       return;
     }
@@ -196,15 +197,15 @@ function AuthGate({ onAuthenticated }) {
       return;
     }
     const saved = JSON.parse(localStorage.getItem('zhihang-ai-user') || 'null');
-    if (!saved || saved.email !== email || saved.password !== form.password) {
-      setMessage('账号或密码不正确；首次使用请先注册。');
+    if (!saved || (saved.email !== email && saved.name !== account) || saved.password !== form.password) {
+      setMessage('账号或密码不正确。请使用注册时的邮箱或昵称登录；首次使用请先注册。');
       return;
     }
     sessionStorage.setItem('zhihang-ai-session', JSON.stringify({ name: saved.name, email: saved.email }));
     onAuthenticated({ name: saved.name, email: saved.email });
   };
   const switchMode = (nextMode) => { setMode(nextMode); setMessage(''); };
-  return <main className="auth-page"><section className="auth-intro"><div className="auth-brand"><div className="brand-mark"><Icon name="compass" size={25}/></div>职航 <b>AI</b></div><div className="auth-copy"><span>2026 数字马力杯 · A02</span><h1>把实习目标，<br/>变成每天可执行的计划。</h1><p>职业测评、成长计划和场景训练，帮助你从 Java 学习走向第一段实习。</p></div><div className="auth-points"><div><Icon name="lock"/> 本地保存账号信息</div><div><Icon name="spark"/> AI 职业导航体验</div><div><Icon name="chart"/> 可追踪的学习成长</div></div></section><section className="auth-panel"><div className="auth-card"><div className="auth-tabs"><button className={mode === 'login' ? 'selected' : ''} onClick={() => switchMode('login')}>登录</button><button className={mode === 'register' ? 'selected' : ''} onClick={() => switchMode('register')}>注册</button></div><h2>{mode === 'login' ? '欢迎回来' : '创建你的账号'}</h2><p>{mode === 'login' ? '登录后继续你的实习准备计划。' : '注册后即可开始职业测评和训练。'}</p><form onSubmit={submit}>{mode === 'register' && <label>昵称<input value={form.name} onChange={update('name')} placeholder="例如：宋同学" autoComplete="name"/></label>}<label>邮箱<input type="email" value={form.email} onChange={update('email')} placeholder="name@example.com" autoComplete="email"/></label><label>密码<input type="password" value={form.password} onChange={update('password')} placeholder="至少输入 6 位" minLength="6" autoComplete={mode === 'login' ? 'current-password' : 'new-password'}/></label>{message && <div className="auth-message">{message}</div>}<button className="primary auth-submit" type="submit">{mode === 'login' ? '登录并进入职航 AI' : '注册并开始体验'} <Icon name="arrow" size={17}/></button></form><small>{mode === 'login' ? '首次使用？' : '已经有账号？'} <button onClick={() => switchMode(mode === 'login' ? 'register' : 'login')}>{mode === 'login' ? '去注册' : '去登录'}</button></small></div></section></main>;
+  return <main className="auth-page"><section className="auth-intro"><div className="auth-brand"><div className="brand-mark"><Icon name="compass" size={25}/></div>职航 <b>AI</b></div><div className="auth-copy"><span>2026 数字马力杯 · A02</span><h1>把实习目标，<br/>变成每天可执行的计划。</h1><p>职业测评、成长计划和场景训练，帮助你从 Java 学习走向第一段实习。</p></div><div className="auth-points"><div><Icon name="lock"/> 本地保存账号信息</div><div><Icon name="spark"/> AI 职业导航体验</div><div><Icon name="chart"/> 可追踪的学习成长</div></div></section><section className="auth-panel"><div className="auth-card"><div className="auth-tabs"><button className={mode === 'login' ? 'selected' : ''} onClick={() => switchMode('login')}>登录</button><button className={mode === 'register' ? 'selected' : ''} onClick={() => switchMode('register')}>注册</button></div><h2>{mode === 'login' ? '欢迎回来' : '创建你的账号'}</h2><p>{mode === 'login' ? '使用注册时的邮箱或昵称登录。' : '注册后即可开始职业测评和训练。'}</p><form onSubmit={submit}>{mode === 'register' && <label>昵称<input value={form.name} onChange={update('name')} placeholder="例如：宋同学" autoComplete="name"/></label>}<label>{mode === 'login' ? '邮箱或昵称' : '邮箱'}<input type={mode === 'login' ? 'text' : 'email'} value={form.email} onChange={update('email')} placeholder={mode === 'login' ? 'name@example.com 或 宋同学' : 'name@example.com'} autoComplete={mode === 'login' ? 'username' : 'email'}/></label><label>密码<input type="password" value={form.password} onChange={update('password')} placeholder="至少输入 6 位" minLength="6" autoComplete={mode === 'login' ? 'current-password' : 'new-password'}/></label>{message && <div className="auth-message">{message}</div>}<button className="primary auth-submit" type="submit">{mode === 'login' ? '登录并进入职航 AI' : '注册并开始体验'} <Icon name="arrow" size={17}/></button></form><small>{mode === 'login' ? '首次使用？' : '已经有账号？'} <button onClick={() => switchMode(mode === 'login' ? 'register' : 'login')}>{mode === 'login' ? '去注册' : '去登录'}</button></small></div></section></main>;
 }
 
 function Radar({ dimensions }) {
