@@ -25,6 +25,16 @@ const nav = [
   ['首页', 'home'], ['职业测评', 'compass'], ['成长计划', 'chart'], ['模拟训练', 'flask'], ['我的报告', 'file']
 ];
 
+const dailyEncouragements = [
+  '今天多完成一个小任务，离理想实习就更近一步。',
+  '不必一次做到完美，先让项目稳定地向前走。',
+  '代码会留下痕迹，持续学习也会成为你的底气。',
+  '把目标拆小，认真完成今天这一格就很好。',
+  '每一次排错，都是在为真正的项目经验加分。',
+  '先行动，再优化；你的作品会替你说话。',
+  '保持节奏，慢一点没关系，别停在原地。',
+];
+
 const tasks = [
   { title: '了解 Java 后端开发岗位', meta: '30 分钟 · 建议周一完成', tone: 'blue' },
   { title: '完成 MySQL 表设计练习', meta: '45 分钟 · 建议周二完成', tone: 'green' },
@@ -265,6 +275,9 @@ function App() {
     return session ? readCheckinState(session.email) : { weekKey: getWeekKey(), checkins: defaultWeeklyCheckins, makeupCards: 0, rewardGranted: false };
   });
   const complete = done.filter(Boolean).length;
+  const yearStart = new Date(new Date().getFullYear(), 0, 0);
+  const dayOfYear = Math.floor((Date.now() - yearStart.getTime()) / 86400000);
+  const dailyEncouragement = dailyEncouragements[dayOfYear % dailyEncouragements.length];
   const subtitle = useMemo(() => active === '首页' ? '科学规划职业路径，持续提升职场竞争力，遇见更好的自己。' : `这里是${active}模块的参考界面，后续可接入 Spring Boot 与百宝箱智能体。`, [active]);
 
   const hasAssessment = Boolean(assessmentResult);
@@ -326,7 +339,7 @@ function App() {
       <div className="user-menu-wrap"><button className="user-card" onClick={() => setUserMenu((open) => !open)} aria-expanded={userMenu} title="打开账号菜单"><div className="avatar">{currentUser.name.slice(0, 1)}</div><div><b>{currentUser.name}，你好</b><small>{currentUser.email}</small></div></button>{userMenu && <div className="user-menu"><span>账号菜单</span><button className="menu-setting" onClick={() => { setUserMenu(false); openSection('设置'); }}><span><Icon name="settings" size={15}/> 设置</span><Icon name="arrow" size={15}/></button><button onClick={requestLogout}>退出登录 <Icon name="arrow" size={15}/></button></div>}</div>
     </aside>
     <section className="content">
-      <header className="topbar"><div><h1>{active === '首页' ? '同学你好，欢迎来到职航 AI' : active}</h1><p>{subtitle}</p></div><button className="primary" onClick={startTest}><Icon name="compass"/>开始测评</button></header>
+      <header className="topbar"><div><h1>{active === '首页' ? '同学你好，欢迎来到职航 AI' : active}</h1><p>{subtitle}</p></div>{active === '首页' && <div className="daily-encouragement"><Icon name="spark" size={17}/><div><small>每日鼓励</small><span>{dailyEncouragement}</span></div></div>}<button className="primary" onClick={startTest}><Icon name="compass"/>开始测评</button></header>
       {active === '首页' ? <><section className="overview-grid">
         <article className="career-card panel">
           <div className="panel-title"><span>你的职业匹配度总览</span><button onClick={() => openSection('我的报告')}>查看报告 <Icon name="arrow" size={16}/></button></div>
