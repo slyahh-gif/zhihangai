@@ -207,6 +207,7 @@ function SupabaseAuthGate({ onAuthenticated }) {
   const [form, setForm] = useState({ name: '', email: '', password: '' });
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const emailRedirectTo = window.location.hostname.endsWith('github.io') ? 'https://slyahh-gif.github.io/zhihangai/' : `${window.location.origin}/`;
   const update = (key) => (event) => setForm((value) => ({ ...value, [key]: event.target.value }));
   const submit = async (event) => {
     event.preventDefault();
@@ -219,7 +220,6 @@ function SupabaseAuthGate({ onAuthenticated }) {
     setLoading(true);
     setMessage('');
     if (mode === 'register') {
-      const emailRedirectTo = window.location.hostname.endsWith('github.io') ? 'https://slyahh-gif.github.io/zhihangai/' : `${window.location.origin}/`;
       const { data, error } = await supabase.auth.signUp({ email, password: form.password, options: { data: { display_name: name }, emailRedirectTo } });
       if (error) setMessage(error.message);
       else if (data.session) onAuthenticated({ id: data.user.id, name, email });
@@ -231,7 +231,15 @@ function SupabaseAuthGate({ onAuthenticated }) {
     }
     setLoading(false);
   };
-  return <main className="auth-page"><section className="auth-intro"><div className="auth-brand"><div className="brand-mark"><Icon name="compass" size={25}/></div>职航 <b>AI</b></div><div className="auth-copy"><span>2026 服务外包创新应用大赛 A02</span><h1>从职业画像开始，<br/>向真实实习岗位靠近。</h1><p>注册后即可保存职业测评、成长计划，并在学习广场与其他同学交流项目进展。</p></div><div className="auth-points"><div><Icon name="lock"/> 安全账号登录</div><div><Icon name="spark"/> AI 学习教练</div><div><Icon name="chart"/> 成长记录同步</div></div></section><section className="auth-panel"><div className="auth-card"><div className="auth-tabs"><button className={mode === 'login' ? 'selected' : ''} onClick={() => { setMode('login'); setMessage(''); }}>登录</button><button className={mode === 'register' ? 'selected' : ''} onClick={() => { setMode('register'); setMessage(''); }}>注册</button></div><h2>{mode === 'login' ? '欢迎回来' : '创建你的账号'}</h2><p>{mode === 'login' ? '登录后继续查看你的学习数据与广场动态。' : '使用邮箱创建账号，开始保存你的学习成长记录。'}</p><form onSubmit={submit}>{mode === 'register' && <label>昵称<input value={form.name} onChange={update('name')} placeholder="例如：小明" autoComplete="name"/></label>}<label>邮箱<input type="email" value={form.email} onChange={update('email')} placeholder="name@example.com" autoComplete="email"/></label><label>密码<input type="password" value={form.password} onChange={update('password')} placeholder="至少 6 位" minLength="6" autoComplete={mode === 'login' ? 'current-password' : 'new-password'}/></label>{message && <div className="auth-message">{message}</div>}<button className="primary auth-submit" type="submit" disabled={loading}>{loading ? '处理中…' : mode === 'login' ? '登录职航 AI' : '注册并开始'} <Icon name="arrow" size={17}/></button></form><small>{mode === 'login' ? '还没有账号？' : '已有账号？'} <button onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setMessage(''); }}>{mode === 'login' ? '立即注册' : '去登录'}</button></small></div></section></main>;
+  const resendVerification = async () => {
+    const email = form.email.trim().toLowerCase();
+    if (!email) return setMessage('请先填写注册时使用的邮箱。');
+    setLoading(true);
+    const { error } = await supabase.auth.resend({ type: 'signup', email, options: { emailRedirectTo } });
+    setMessage(error ? '发送失败，请稍后再试。' : '新的验证邮件已发送，请使用最新一封邮件中的链接。');
+    setLoading(false);
+  };
+  return <main className="auth-page"><section className="auth-intro"><div className="auth-brand"><div className="brand-mark"><Icon name="compass" size={25}/></div>职航 <b>AI</b></div><div className="auth-copy"><span>2026 服务外包创新应用大赛 A02</span><h1>从职业画像开始，<br/>向真实实习岗位靠近。</h1><p>注册后即可保存职业测评、成长计划，并在学习广场与其他同学交流项目进展。</p></div><div className="auth-points"><div><Icon name="lock"/> 安全账号登录</div><div><Icon name="spark"/> AI 学习教练</div><div><Icon name="chart"/> 成长记录同步</div></div></section><section className="auth-panel"><div className="auth-card"><div className="auth-tabs"><button className={mode === 'login' ? 'selected' : ''} onClick={() => { setMode('login'); setMessage(''); }}>登录</button><button className={mode === 'register' ? 'selected' : ''} onClick={() => { setMode('register'); setMessage(''); }}>注册</button></div><h2>{mode === 'login' ? '欢迎回来' : '创建你的账号'}</h2><p>{mode === 'login' ? '登录后继续查看你的学习数据与广场动态。' : '使用邮箱创建账号，开始保存你的学习成长记录。'}</p><form onSubmit={submit}>{mode === 'register' && <label>昵称<input value={form.name} onChange={update('name')} placeholder="例如：小明" autoComplete="name"/></label>}<label>邮箱<input type="email" value={form.email} onChange={update('email')} placeholder="name@example.com" autoComplete="email"/></label><label>密码<input type="password" value={form.password} onChange={update('password')} placeholder="至少 6 位" minLength="6" autoComplete={mode === 'login' ? 'current-password' : 'new-password'}/></label>{message && <div className="auth-message">{message}</div>}<button className="primary auth-submit" type="submit" disabled={loading}>{loading ? '处理中…' : mode === 'login' ? '登录职航 AI' : '注册并开始'} <Icon name="arrow" size={17}/></button>{message.includes('验证') && <button className="secondary auth-resend" type="button" onClick={resendVerification} disabled={loading}>重新发送验证邮件</button>}</form><small>{mode === 'login' ? '还没有账号？' : '已有账号？'} <button onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setMessage(''); }}>{mode === 'login' ? '立即注册' : '去登录'}</button></small></div></section></main>;
 }
 
 function SocialFeed({ currentUser }) {
