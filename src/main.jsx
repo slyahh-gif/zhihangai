@@ -92,21 +92,49 @@ const defaultFuturePlan = [
 
 const defaultWeeklyCheckins = [false, false, false, false, false, false, false];
 
+function getLocalDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getWeekDates(date = new Date()) {
+  const monday = new Date(date);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  return Array.from({ length: 7 }, (_, index) => {
+    const current = new Date(monday);
+    current.setDate(monday.getDate() + index);
+    return getLocalDateKey(current);
+  });
+}
+
 function getWeekKey() {
-  const date = new Date();
-  const mondayOffset = (date.getDay() + 6) % 7;
-  date.setDate(date.getDate() - mondayOffset);
-  return date.toISOString().slice(0, 10);
+  return getWeekDates()[0];
 }
 
 function readCheckinState(email) {
   try {
     const saved = JSON.parse(localStorage.getItem(`zhihang-ai-checkins-${email}`) || 'null');
+    const weekKey = getWeekKey();
+    const weekDates = getWeekDates();
     const makeupCards = Math.min(5, Math.max(0, saved?.makeupCards || 0));
-    if (saved?.weekKey === getWeekKey() && Array.isArray(saved.checkins) && saved.checkins.length === 7) return { ...saved, makeupCards };
-    return { weekKey: getWeekKey(), checkins: defaultWeeklyCheckins, makeupCards, rewardGranted: false };
+    const isCurrentWeek = saved?.weekKey === weekKey;
+    const legacyDates = isCurrentWeek && Array.isArray(saved?.checkins)
+      ? saved.checkins.flatMap((checked, index) => checked ? [weekDates[index]] : [])
+      : [];
+    const checkinDates = (Array.isArray(saved?.checkinDates) ? saved.checkinDates : legacyDates)
+      .filter((date) => weekDates.includes(date));
+    return {
+      weekKey,
+      checkinDates: [...new Set(checkinDates)],
+      checkins: weekDates.map((date) => checkinDates.includes(date)),
+      makeupCards,
+      rewardGranted: isCurrentWeek ? Boolean(saved?.rewardGranted) : false,
+    };
   } catch {
-    return { weekKey: getWeekKey(), checkins: defaultWeeklyCheckins, makeupCards: 0, rewardGranted: false };
+    return { weekKey: getWeekKey(), checkinDates: [], checkins: [...defaultWeeklyCheckins], makeupCards: 0, rewardGranted: false };
   }
 }
 
@@ -349,7 +377,7 @@ function App() {
   const [userMenu, setUserMenu] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('zhihang-ai-theme') || 'light');
   const [futurePlan, setFuturePlan] = useState(defaultFuturePlan);
-  const [checkinState, setCheckinState] = useState({ weekKey: getWeekKey(), checkins: defaultWeeklyCheckins, makeupCards: 0, rewardGranted: false });
+  const [checkinState, setCheckinState] = useState({ weekKey: getWeekKey(), checkinDates: [], checkins: [...defaultWeeklyCheckins], makeupCards: 0, rewardGranted: false });
   const complete = done.filter(Boolean).length;
   const yearStart = new Date(new Date().getFullYear(), 0, 0);
   const dayOfYear = Math.floor((Date.now() - yearStart.getTime()) / 86400000);
@@ -381,13 +409,17 @@ function App() {
     });
     return () => subscription.unsubscribe();
   }, []);
-  const logout = async () => { await supabase.auth.signOut(); sessionStorage.removeItem('zhihang-ai-session'); setCurrentUser(null); setAssessmentResult(null); setCheckinState({ weekKey: getWeekKey(), checkins: defaultWeeklyCheckins, makeupCards: 0, rewardGranted: false }); setUserMenu(false); setModal(null); };
+  const logout = async () => { await supabase.auth.signOut(); sessionStorage.removeItem('zhihang-ai-session'); setCurrentUser(null); setAssessmentResult(null); setCheckinState({ weekKey: getWeekKey(), checkinDates: [], checkins: [...defaultWeeklyCheckins], makeupCards: 0, rewardGranted: false }); setUserMenu(false); setModal(null); };
   const toggleCheckin = (index) => {
     const todayIndex = (new Date().getDay() + 6) % 7;
-    if (index !== todayIndex || checkinState.checkins[index]) return;
-    const checkins = checkinState.checkins.map((value, itemIndex) => itemIndex === index ? true : value);
+    const todayDate = getLocalDateKey();
+    if (index !== todayIndex || checkinState.checkinDates?.includes(todayDate)) return;
+    const weekDates = getWeekDates();
+    const existingDates = checkinState.checkinDates || weekDates.filter((date, itemIndex) => checkinState.checkins[itemIndex]);
+    const checkinDates = [...new Set([...existingDates, todayDate])];
+    const checkins = weekDates.map((date) => checkinDates.includes(date));
     const reachedReward = checkins.filter(Boolean).length >= 5 && !checkinState.rewardGranted;
-    const next = { ...checkinState, checkins, rewardGranted: checkinState.rewardGranted || reachedReward, makeupCards: reachedReward ? Math.min(5, checkinState.makeupCards + 1) : checkinState.makeupCards };
+    const next = { ...checkinState, weekKey: getWeekKey(), checkinDates, checkins, rewardGranted: checkinState.rewardGranted || reachedReward, makeupCards: reachedReward ? Math.min(5, checkinState.makeupCards + 1) : checkinState.makeupCards };
     setCheckinState(next);
     localStorage.setItem(`zhihang-ai-checkins-${currentUser.email}`, JSON.stringify(next));
     if (reachedReward) openInfo('获得补签卡', next.makeupCards >= 5 ? '本周打卡达标！补签卡已达到上限 5 张。' : `本周累计学习 5 天，获得 1 张补签卡。当前共有 ${next.makeupCards} 张。`);
