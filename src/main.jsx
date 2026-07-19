@@ -146,6 +146,13 @@ function readNextWeekPlan(email) {
   return tasks.map((task) => task.title);
 }
 
+function readPlanHistory(email) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(`zhihang-ai-plan-history-${email}`) || '[]');
+    return Array.isArray(saved) ? saved : [];
+  } catch { return []; }
+}
+
 function getLegacyWeekKey() {
   const monday = new Date();
   monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
@@ -265,8 +272,12 @@ function evaluateTrainingResponse(response) {
   return { score, level, lengthScore, clarityScore, collaborationScore, actionScore, advice: missing.length ? `下一次建议重点补充：${missing.join('；')}。` : '表达完整，下一次可尝试把任务拆成更具体的时间节点。' };
 }
 
+let growthPlanShared = { nextWeekPlan: [], onNextWeekPlanChange: () => {}, planHistory: [] };
+
 function GrowthPlanPanel({ complete, futurePlan, onPlanChange, onBackHome, checkins, makeupCards, onCheckinToggle }) {
   const [newTask, setNewTask] = useState('');
+  const [view, setView] = useState('current');
+  const { nextWeekPlan, onNextWeekPlanChange, planHistory } = growthPlanShared;
   const update = (id, key, value) => onPlanChange(futurePlan.map((item) => item.id === id ? { ...item, [key]: value } : item));
   const addTask = () => {
     const title = newTask.trim();
@@ -276,7 +287,7 @@ function GrowthPlanPanel({ complete, futurePlan, onPlanChange, onBackHome, check
   };
   const checkinCount = checkins.filter(Boolean).length;
   const todayIndex = (new Date().getDay() + 6) % 7;
-  return <section className="plan-workspace panel"><div className="workspace-hero"><span>成长路线</span><h2>未来 4 周训练计划</h2><p>首页已完成 {complete}/4 项。本页可直接调整任务名称、安排周次，并新增自己的训练项目。</p><button className="primary" onClick={onBackHome}>回到本周任务 <Icon name="arrow" size={17}/></button></div><section className="checkin-panel"><div className="checkin-heading"><div><span>本周学习打卡</span><p>仅当天可打卡一次；本周累计 5 天学习，自动赠送 1 张补签卡。</p></div><div className="checkin-stats"><b>{checkinCount}/7 天</b><small>补签卡 {makeupCards}/5</small></div></div><div className="checkin-days">{['周一', '周二', '周三', '周四', '周五', '周六', '周日'].map((day, index) => <button key={day} className={`${checkins[index] ? 'checked' : ''} ${index === todayIndex ? 'today' : ''}`} disabled={checkins[index] || index !== todayIndex} onClick={() => onCheckinToggle(index)}><span>{day}</span><i>{checkins[index] ? <Icon name="check" size={17}/> : index + 1}</i><small>{checkins[index] ? '已学习' : index === todayIndex ? '今日打卡' : '未到日期'}</small></button>)}</div></section><div className="plan-editor">{futurePlan.map((item, index) => <article className="plan-editor-row" key={item.id}><div className="plan-index">{index + 1}</div><select value={item.week} onChange={(event) => update(item.id, 'week', event.target.value)} aria-label={`${item.title} 的安排周次`}>{['第 1 周', '第 2 周', '第 3 周', '第 4 周', '第 5 周', '第 6 周'].map((week) => <option key={week}>{week}</option>)}</select><div><input value={item.title} onChange={(event) => update(item.id, 'title', event.target.value)} aria-label="训练任务名称"/><textarea value={item.goal} onChange={(event) => update(item.id, 'goal', event.target.value)} aria-label="训练任务目标"/></div></article>)}</div><div className="plan-add"><input value={newTask} onChange={(event) => setNewTask(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && addTask()} placeholder="输入想加入的训练任务，例如：完成一个 AI 智能体原型"/><button className="secondary" onClick={addTask}>新增训练任务</button></div></section>;
+  return <section className="plan-workspace panel"><div className="workspace-hero"><span>成长路线</span><h2>未来 4 周训练计划</h2><p>首页已完成 {complete}/4 项。本页可安排下周任务，并回看每周的完成记录。</p><button className="primary" onClick={onBackHome}>回到本周任务 <Icon name="arrow" size={17}/></button></div><section className="checkin-panel"><div className="checkin-heading"><div><span>本周学习打卡</span><p>仅当天可打卡一次；本周累计 5 天学习，自动赠送 1 张补签卡。</p></div><div className="checkin-stats"><b>{checkinCount}/7 天</b><small>补签卡 {makeupCards}/5</small></div></div><div className="checkin-days">{['周一', '周二', '周三', '周四', '周五', '周六', '周日'].map((day, index) => <button key={day} className={`${checkins[index] ? 'checked' : ''} ${index === todayIndex ? 'today' : ''}`} disabled={checkins[index] || index !== todayIndex} onClick={() => onCheckinToggle(index)}><span>{day}</span><i>{checkins[index] ? <Icon name="check" size={17}/> : index + 1}</i><small>{checkins[index] ? '已学习' : index === todayIndex ? '今日打卡' : '未到日期'}</small></button>)}</div></section><div className="plan-tabs"><button className={view === 'current' ? 'active' : ''} onClick={() => setView('current')}>本周计划</button><button className={view === 'next' ? 'active' : ''} onClick={() => setView('next')}>下一周</button><button className={view === 'history' ? 'active' : ''} onClick={() => setView('history')}>历史计划</button></div>{view === 'current' ? <><div className="plan-editor">{futurePlan.map((item, index) => <article className="plan-editor-row" key={item.id}><div className="plan-index">{index + 1}</div><select value={item.week} onChange={(event) => update(item.id, 'week', event.target.value)} aria-label={`${item.title} 的安排周次`}>{['第 1 周', '第 2 周', '第 3 周', '第 4 周', '第 5 周', '第 6 周'].map((week) => <option key={week}>{week}</option>)}</select><div><input value={item.title} onChange={(event) => update(item.id, 'title', event.target.value)} aria-label="训练任务名称"/><textarea value={item.goal} onChange={(event) => update(item.id, 'goal', event.target.value)} aria-label="训练任务目标"/></div></article>)}</div><div className="plan-add"><input value={newTask} onChange={(event) => setNewTask(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && addTask()} placeholder="输入想加入的训练任务，例如：完成一个 AI 智能体原型"/><button className="secondary" onClick={addTask}>新增训练任务</button></div></> : view === 'next' ? <section className="next-week-editor"><b>下周计划 · {getNextWeekRangeLabel()}</b><p>这里可以提前安排任务；下周开始前没有完成勾选。</p>{nextWeekPlan.map((item, index) => <label key={index}><span>下周任务 {index + 1}</span><input value={item} onChange={(event) => onNextWeekPlanChange(nextWeekPlan.map((value, itemIndex) => itemIndex === index ? event.target.value : value))}/></label>)}</section> : <section className="history-plan">{planHistory.length ? planHistory.map((record) => <article key={record.weekKey}><div><b>{record.weekRange}</b><small>完成 {record.done.filter(Boolean).length}/{record.done.length} 项</small></div>{record.tasks.map((task, index) => <p key={task}><Icon name={record.done[index] ? 'check' : 'file'} size={15}/>{task}</p>)}</article>) : <div className="history-empty"><Icon name="calendar" size={24}/><span>还没有历史计划，完成或调整本周任务后会自动记录。</span></div>}</section>}</section>;
 }
 
 function getAssistantReply(question, context) {
@@ -494,6 +505,7 @@ function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('zhihang-ai-theme') || 'light');
   const [futurePlan, setFuturePlan] = useState(defaultFuturePlan);
   const [nextWeekPlan, setNextWeekPlan] = useState(() => tasks.map((task) => task.title));
+  const [planHistory, setPlanHistory] = useState([]);
   const [checkinState, setCheckinState] = useState({ weekKey: getWeekKey(), checkinDates: [], checkins: [...defaultWeeklyCheckins], makeupCards: 0, rewardGranted: false });
   const complete = done.filter(Boolean).length;
   const weekRangeLabel = getWeekRangeLabel();
@@ -517,6 +529,7 @@ function App() {
     setCurrentUser(user);
     setDone(readTaskState(user.email));
     setNextWeekPlan(readNextWeekPlan(user.email));
+    setPlanHistory(readPlanHistory(user.email));
     const restoredCheckinState = readCheckinState(user.email);
     setCheckinState(restoredCheckinState);
     localStorage.setItem(`zhihang-ai-checkins-${user.email}`, JSON.stringify(restoredCheckinState));
@@ -535,7 +548,7 @@ function App() {
     });
     return () => subscription.unsubscribe();
   }, []);
-  const updateDone = (updater) => setDone((current) => { const next = typeof updater === 'function' ? updater(current) : updater; if (currentUser) localStorage.setItem(`zhihang-ai-weekly-tasks-${currentUser.email}`, JSON.stringify({ weekKey: getWeekKey(), done: next })); return next; });
+  const updateDone = (updater) => setDone((current) => { const next = typeof updater === 'function' ? updater(current) : updater; if (currentUser) { localStorage.setItem(`zhihang-ai-weekly-tasks-${currentUser.email}`, JSON.stringify({ weekKey: getWeekKey(), done: next })); const record = { weekKey: getWeekKey(), weekRange: getWeekRangeLabel(), done: next, tasks: tasks.map((task) => task.title) }; setPlanHistory((history) => { const updated = [record, ...history.filter((item) => item.weekKey !== record.weekKey)].slice(0, 12); localStorage.setItem(`zhihang-ai-plan-history-${currentUser.email}`, JSON.stringify(updated)); return updated; }); } return next; });
   const updateNextWeekPlan = (items) => { setNextWeekPlan(items); if (currentUser) localStorage.setItem(`zhihang-ai-next-week-plan-${currentUser.email}`, JSON.stringify(items)); };
   const planNextWeek = () => {
     const items = nextWeekPlan.map((item, index) => window.prompt(`填写下周任务 ${index + 1}（${getNextWeekRangeLabel()}）`, item) ?? item);
@@ -590,6 +603,7 @@ function App() {
     if (active === '我的报告') return !hasAssessment ? '开始测评' : title === '提升建议' ? '加入成长计划' : '查看详细画像';
     return '查看详情';
   };
+  growthPlanShared = { nextWeekPlan, onNextWeekPlanChange: updateNextWeekPlan, planHistory };
   if (!currentUser) return <SupabaseAuthGate onAuthenticated={login}/>;
   return <main className={`app-shell theme-${theme}`}>
     <aside className="sidebar">
