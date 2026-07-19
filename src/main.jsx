@@ -83,6 +83,12 @@ const careerProfiles = [
   { name: '数据与业务系统开发实习生', intro: '适合从数据库设计、数据处理和业务系统功能交付切入。', weights: { technical: .28, delivery: .28, collaboration: .18, growth: .16, ai: .10 } },
 ];
 
+const assessmentTracks = [
+  { id: 'java', name: 'Java 后端开发', profile: 'Java 后端开发实习生' },
+  { id: 'ai', name: 'Python / AI 应用开发', profile: 'AI 应用开发实习生' },
+  { id: 'data', name: '数据分析与业务系统', profile: '数据与业务系统开发实习生' },
+];
+
 const defaultFuturePlan = [
   { id: 'p1', week: '第 1 周', title: '搭建 Spring Boot 项目骨架', goal: '完成项目分层、3 个基础接口和 Git 仓库初始化。' },
   { id: 'p2', week: '第 2 周', title: '接入 MySQL 与登录功能', goal: '完成用户表、登录注册接口和基础权限校验。' },
@@ -191,14 +197,15 @@ function readCheckinState(email) {
   }
 }
 
-function calculateAssessment(answers) {
+function calculateAssessment(answers, selectedTrack) {
   const totals = { technical: 0, delivery: 0, collaboration: 0, growth: 0, ai: 0 };
   const counts = { technical: 0, delivery: 0, collaboration: 0, growth: 0, ai: 0 };
   assessmentQuestions.forEach((item, index) => { totals[item.dimension] += (answers[index] ?? 0) + 1; counts[item.dimension] += 1; });
   const dimensions = Object.fromEntries(Object.keys(totals).map((key) => [key, Math.round(40 + ((totals[key] - counts[key]) / (counts[key] * 2)) * 60)]));
-  const scored = careerProfiles.map((profile) => ({ ...profile, score: Math.round(Object.entries(profile.weights).reduce((sum, [key, weight]) => sum + dimensions[key] * weight, 0)) })).sort((a, b) => b.score - a.score);
+  const preferredProfile = assessmentTracks.find((track) => track.id === selectedTrack)?.profile;
+  const scored = careerProfiles.map((profile) => ({ ...profile, score: Math.min(100, Math.round(Object.entries(profile.weights).reduce((sum, [key, weight]) => sum + dimensions[key] * weight, 0)) + (profile.name === preferredProfile ? 3 : 0)) })).sort((a, b) => b.score - a.score);
   const overall = Math.round(dimensions.technical * .30 + dimensions.delivery * .25 + dimensions.collaboration * .20 + dimensions.growth * .15 + dimensions.ai * .10);
-  return { overall, dimensions, primaryCareer: scored[0], alternatives: scored.slice(1) };
+  return { overall, dimensions, selectedTrack, primaryCareer: scored[0], alternatives: scored.slice(1) };
 }
 
 function createResumeTemplate(user, result) {
@@ -500,6 +507,7 @@ function App() {
   const [modal, setModal] = useState(null);
   const [testStep, setTestStep] = useState(0);
   const [testAnswers, setTestAnswers] = useState([]);
+  const [selectedTrack, setSelectedTrack] = useState('java');
   const [trainingResponse, setTrainingResponse] = useState('');
   const [userMenu, setUserMenu] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('zhihang-ai-theme') || 'light');
@@ -515,7 +523,14 @@ function App() {
   const subtitle = useMemo(() => active === '首页' ? '科学规划职业路径，持续提升职场竞争力，遇见更好的自己。' : `这里是${active}模块的参考界面，后续可接入 Spring Boot 与百宝箱智能体。`, [active]);
 
   const hasAssessment = Boolean(assessmentResult);
-  const startTest = () => { setTestStep(0); setTestAnswers([]); setModal('test'); };
+  const startTest = () => {
+    const choices = assessmentTracks.map((track, index) => `${index + 1}. ${track.name}`).join('\n');
+    const answer = window.prompt(`请选择本次职业测评方向：\n${choices}\n\n输入 1、2 或 3`, String(assessmentTracks.findIndex((track) => track.id === selectedTrack) + 1));
+    const index = Number(answer) - 1;
+    if (!Number.isInteger(index) || !assessmentTracks[index]) return;
+    setSelectedTrack(assessmentTracks[index].id);
+    setTestStep(0); setTestAnswers([]); setModal('test');
+  };
   const openResume = () => {
     if (!hasAssessment) return openInfo('请先完成职业测评', '完成 25 道职业测评题后，系统会结合你的匹配方向与能力维度生成实习简历初稿。');
     setModal({ kind: 'resume', template: createResumeTemplate(currentUser, assessmentResult) });
@@ -523,7 +538,7 @@ function App() {
   const startScenario = (scenario) => { setTrainingResponse(''); setModal(scenario); };
   const openInfo = (title, text) => setModal({ kind: 'info', title, text });
   const openSection = (label) => setActive(label);
-  const finishAssessment = (answers) => { const result = calculateAssessment(answers); localStorage.setItem(`zhihang-ai-assessment-${currentUser.email}`, JSON.stringify(result)); setAssessmentResult(result); openInfo('测评完成', `综合得分 ${result.overall} 分。最适合的方向是“${result.primaryCareer.name}”：${result.primaryCareer.intro}`); };
+  const finishAssessment = (answers) => { const result = calculateAssessment(answers, selectedTrack); localStorage.setItem(`zhihang-ai-assessment-${currentUser.email}`, JSON.stringify(result)); setAssessmentResult(result); openInfo('测评完成', `已按“${assessmentTracks.find((track) => track.id === selectedTrack)?.name}”方向完成测评。综合得分 ${result.overall} 分，最适合的岗位是“${result.primaryCareer.name}”。`); };
   const login = async (user) => {
     if (user.id) await supabase.from('profiles').upsert({ id: user.id, display_name: user.name }, { onConflict: 'id' });
     setCurrentUser(user);
