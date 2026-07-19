@@ -114,13 +114,20 @@ function getWeekKey() {
   return getWeekDates()[0];
 }
 
+function getLegacyWeekKey() {
+  const monday = new Date();
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  return monday.toISOString().slice(0, 10);
+}
+
 function readCheckinState(email) {
   try {
     const saved = JSON.parse(localStorage.getItem(`zhihang-ai-checkins-${email}`) || 'null');
     const weekKey = getWeekKey();
     const weekDates = getWeekDates();
     const makeupCards = Math.min(5, Math.max(0, saved?.makeupCards || 0));
-    const isCurrentWeek = saved?.weekKey === weekKey;
+    // 兼容旧版本：旧逻辑使用 UTC 日期，东八区会把周一误记成周日。
+    const isCurrentWeek = saved?.weekKey === weekKey || saved?.weekKey === getLegacyWeekKey();
     const legacyDates = isCurrentWeek && Array.isArray(saved?.checkins)
       ? saved.checkins.flatMap((checked, index) => checked ? [weekDates[index]] : [])
       : [];
