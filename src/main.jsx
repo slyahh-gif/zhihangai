@@ -120,6 +120,13 @@ function getLegacyWeekKey() {
   return monday.toISOString().slice(0, 10);
 }
 
+function isCompatibleWeekKey(savedWeekKey, weekKey) {
+  if (!savedWeekKey) return false;
+  const savedTime = new Date(`${savedWeekKey}T12:00:00`).getTime();
+  const currentTime = new Date(`${weekKey}T12:00:00`).getTime();
+  return Number.isFinite(savedTime) && Math.abs(savedTime - currentTime) <= 86400000;
+}
+
 function readCheckinState(email) {
   try {
     const saved = JSON.parse(localStorage.getItem(`zhihang-ai-checkins-${email}`) || 'null');
@@ -127,7 +134,7 @@ function readCheckinState(email) {
     const weekDates = getWeekDates();
     const makeupCards = Math.min(5, Math.max(0, saved?.makeupCards || 0));
     // 兼容旧版本：旧逻辑使用 UTC 日期，东八区会把周一误记成周日。
-    const isCurrentWeek = saved?.weekKey === weekKey || saved?.weekKey === getLegacyWeekKey();
+    const isCurrentWeek = isCompatibleWeekKey(saved?.weekKey, weekKey) || saved?.weekKey === getLegacyWeekKey();
     const legacyDates = isCurrentWeek && Array.isArray(saved?.checkins)
       ? saved.checkins.flatMap((checked, index) => checked ? [weekDates[index]] : [])
       : [];
@@ -400,7 +407,9 @@ function App() {
   const login = async (user) => {
     if (user.id) await supabase.from('profiles').upsert({ id: user.id, display_name: user.name }, { onConflict: 'id' });
     setCurrentUser(user);
-    setCheckinState(readCheckinState(user.email));
+    const restoredCheckinState = readCheckinState(user.email);
+    setCheckinState(restoredCheckinState);
+    localStorage.setItem(`zhihang-ai-checkins-${user.email}`, JSON.stringify(restoredCheckinState));
     try { setAssessmentResult(JSON.parse(localStorage.getItem(`zhihang-ai-assessment-${user.email}`) || 'null')); } catch { setAssessmentResult(null); }
   };
   useEffect(() => {
