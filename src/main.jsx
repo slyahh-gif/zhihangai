@@ -114,6 +114,38 @@ function getWeekKey() {
   return getWeekDates()[0];
 }
 
+function getWeekRangeLabel(date = new Date()) {
+  const monday = new Date(date);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  const format = (value) => `${value.getMonth() + 1}.${value.getDate()}`;
+  return `${format(monday)} – ${format(sunday)}`;
+}
+
+function getNextWeekRangeLabel() {
+  const nextWeek = new Date();
+  nextWeek.setDate(nextWeek.getDate() + 7);
+  return getWeekRangeLabel(nextWeek);
+}
+
+function readTaskState(email) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(`zhihang-ai-weekly-tasks-${email}`) || 'null');
+    if (saved?.weekKey === getWeekKey() && Array.isArray(saved.done) && saved.done.length === tasks.length) return saved.done;
+  } catch {}
+  return Array(tasks.length).fill(false);
+}
+
+function readNextWeekPlan(email) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(`zhihang-ai-next-week-plan-${email}`) || 'null');
+    if (Array.isArray(saved) && saved.length === tasks.length) return saved;
+  } catch {}
+  return tasks.map((task) => task.title);
+}
+
 function getLegacyWeekKey() {
   const monday = new Date();
   monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
@@ -445,11 +477,15 @@ function ResumeEditor({ template, onChange, onDownload }) {
   return <><button className="modal-close" onClick={() => onChange(null)}>×</button><div className="modal-icon"><Icon name="file" size={30}/></div><h2>编辑实习简历模板</h2><p>可直接修改以下内容。右侧会同步预览，确认后下载为 PNG 图片。</p><div className="resume-editor"><div className="resume-fields">{fields.map(([key, label, multiline]) => <label key={key}><span>{label}</span>{multiline ? <textarea value={template[key]} onChange={(event) => onChange({ ...template, [key]: event.target.value })}/> : <input value={template[key]} onChange={(event) => onChange({ ...template, [key]: event.target.value })}/>}</label>)}</div><div className="resume-image-preview"><img src={preview} alt="简历图片实时预览"/></div></div><button className="primary wide" onClick={onDownload}>生成并下载 PNG 简历 <Icon name="arrow"/></button></>;
 }
 
+function NextWeekPlanner({ items, onChange, onClose }) {
+  return <><button className="modal-close" onClick={onClose}>×</button><div className="modal-icon"><Icon name="calendar" size={30}/></div><h2>提前计划下周</h2><p>{getNextWeekRangeLabel()}。现在仅能安排任务，下周开始后才会开放完成勾选。</p><div className="next-week-editor">{items.map((item, index) => <label key={index}><span>下周任务 {index + 1}</span><input value={item} onChange={(event) => onChange(items.map((value, itemIndex) => itemIndex === index ? event.target.value : value))}/></label>)}</div><button className="primary wide" onClick={onClose}>保存下周计划 <Icon name="check"/></button></>;
+}
+
 function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [assessmentResult, setAssessmentResult] = useState(null);
   const [active, setActive] = useState('首页');
-  const [done, setDone] = useState([false, false, false, false]);
+  const [done, setDone] = useState(() => Array(tasks.length).fill(false));
   const [modal, setModal] = useState(null);
   const [testStep, setTestStep] = useState(0);
   const [testAnswers, setTestAnswers] = useState([]);
@@ -457,8 +493,10 @@ function App() {
   const [userMenu, setUserMenu] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('zhihang-ai-theme') || 'light');
   const [futurePlan, setFuturePlan] = useState(defaultFuturePlan);
+  const [nextWeekPlan, setNextWeekPlan] = useState(() => tasks.map((task) => task.title));
   const [checkinState, setCheckinState] = useState({ weekKey: getWeekKey(), checkinDates: [], checkins: [...defaultWeeklyCheckins], makeupCards: 0, rewardGranted: false });
   const complete = done.filter(Boolean).length;
+  const weekRangeLabel = getWeekRangeLabel();
   const yearStart = new Date(new Date().getFullYear(), 0, 0);
   const dayOfYear = Math.floor((Date.now() - yearStart.getTime()) / 86400000);
   const dailyEncouragement = dailyEncouragements[dayOfYear % dailyEncouragements.length];
@@ -477,6 +515,8 @@ function App() {
   const login = async (user) => {
     if (user.id) await supabase.from('profiles').upsert({ id: user.id, display_name: user.name }, { onConflict: 'id' });
     setCurrentUser(user);
+    setDone(readTaskState(user.email));
+    setNextWeekPlan(readNextWeekPlan(user.email));
     const restoredCheckinState = readCheckinState(user.email);
     setCheckinState(restoredCheckinState);
     localStorage.setItem(`zhihang-ai-checkins-${user.email}`, JSON.stringify(restoredCheckinState));
@@ -495,7 +535,14 @@ function App() {
     });
     return () => subscription.unsubscribe();
   }, []);
-  const logout = async () => { await supabase.auth.signOut(); sessionStorage.removeItem('zhihang-ai-session'); setCurrentUser(null); setAssessmentResult(null); setCheckinState({ weekKey: getWeekKey(), checkinDates: [], checkins: [...defaultWeeklyCheckins], makeupCards: 0, rewardGranted: false }); setUserMenu(false); setModal(null); };
+  const updateDone = (updater) => setDone((current) => { const next = typeof updater === 'function' ? updater(current) : updater; if (currentUser) localStorage.setItem(`zhihang-ai-weekly-tasks-${currentUser.email}`, JSON.stringify({ weekKey: getWeekKey(), done: next })); return next; });
+  const updateNextWeekPlan = (items) => { setNextWeekPlan(items); if (currentUser) localStorage.setItem(`zhihang-ai-next-week-plan-${currentUser.email}`, JSON.stringify(items)); };
+  const planNextWeek = () => {
+    const items = nextWeekPlan.map((item, index) => window.prompt(`填写下周任务 ${index + 1}（${getNextWeekRangeLabel()}）`, item) ?? item);
+    updateNextWeekPlan(items);
+    openInfo('下周计划已保存', '下周任务已提前安排。本周内只可编辑，不能提前完成。');
+  };
+  const logout = async () => { await supabase.auth.signOut(); sessionStorage.removeItem('zhihang-ai-session'); setCurrentUser(null); setAssessmentResult(null); setDone(Array(tasks.length).fill(false)); setCheckinState({ weekKey: getWeekKey(), checkinDates: [], checkins: [...defaultWeeklyCheckins], makeupCards: 0, rewardGranted: false }); setUserMenu(false); setModal(null); };
   const toggleCheckin = (index) => {
     const todayIndex = (new Date().getDay() + 6) % 7;
     const todayDate = getLocalDateKey();
@@ -524,7 +571,7 @@ function App() {
     }
     if (active === '成长计划') {
       if (title === '已完成任务') { setActive('首页'); return; }
-      if (title === '本周重点') { setDone((items) => items.map((value, taskIndex) => taskIndex === 2 ? true : value)); return openInfo('本周重点已加入', '已将“搭建 Spring Boot 项目骨架”标记为重点任务。回到首页可查看进度。'); }
+      if (title === '本周重点') { updateDone((items) => items.map((value, taskIndex) => taskIndex === 2 ? true : value)); return openInfo('本周重点已加入', '已将“搭建 Spring Boot 项目骨架”标记为重点任务。回到首页可查看进度。'); }
       return openInfo('下周建议', '建议按顺序完成：创建数据库表 → 编写登录接口 → 完成任务管理接口 → 录制项目演示视频。');
     }
     if (active === '模拟训练') return startScenario(scenarios[index]);
@@ -557,7 +604,7 @@ function App() {
           <div className="panel-title"><span>你的职业匹配度总览</span><button onClick={() => openSection('我的报告')}>查看报告 <Icon name="arrow" size={16}/></button></div>
           <div className="career-main"><div className="score-side"><p>综合职业匹配度</p><div className="score">{hasAssessment ? assessmentResult.overall : '--'}<span>{hasAssessment ? '/ 100' : '待测评'}</span></div><div className="stars">{hasAssessment ? <>★★★★<i>★</i></> : <i>★★★★★</i>}</div><div className="insight"><Icon name="spark" size={17}/><span>{hasAssessment ? `最匹配方向：${assessmentResult.primaryCareer.name}。${assessmentResult.primaryCareer.intro}` : `你还没有完成职业测评。完成 ${assessmentQuestions.length} 道题后，这里会生成匹配度与学习建议。`}</span></div></div>{hasAssessment ? <Radar dimensions={assessmentResult.dimensions}/> : <div className="empty-radar"><Icon name="compass" size={38}/><b>等待职业测评</b><span>点击右上角“开始测评”</span></div>}</div>
         </article>
-        <article className="plan-card panel"><div className="panel-title"><span>本周学习计划</span><small><Icon name="calendar" size={16}/> 7.20 – 7.26</small></div><div className="task-list">{tasks.map((task, i) => <button className={done[i] ? 'task done' : 'task'} key={task.title} onClick={() => setDone(d => d.map((v, n) => n === i ? !v : v))}><span className={`task-icon ${task.tone}`}><Icon name={done[i] ? 'check' : 'file'} size={17}/></span><span className="task-copy"><b>{task.title}</b><small>{task.meta}</small></span><span className="tick">{done[i] && <Icon name="check" size={14}/>}</span></button>)}</div><div className="plan-foot">已完成 <b>{complete}/4</b> 项任务 <button onClick={() => openSection('成长计划')}>查看全部计划 <Icon name="arrow" size={16}/></button></div></article>
+        <article className="plan-card panel"><div className="panel-title"><span>本周学习计划</span><small><Icon name="calendar" size={16}/> {weekRangeLabel}</small></div><div className="task-list">{tasks.map((task, i) => <button className={done[i] ? 'task done' : 'task'} key={task.title} onClick={() => updateDone((items) => items.map((value, itemIndex) => itemIndex === i ? !value : value))}><span className={`task-icon ${task.tone}`}><Icon name={done[i] ? 'check' : 'file'} size={17}/></span><span className="task-copy"><b>{task.title}</b><small>{task.meta}</small></span><span className="tick">{done[i] && <Icon name="check" size={14}/>}</span></button>)}</div><div className="plan-foot">已完成 <b>{complete}/4</b> 项任务 <button onClick={() => openSection('成长计划')}>查看全部计划 <Icon name="arrow" size={16}/></button></div><div className="next-week-plan"><div><b>下周计划 · {getNextWeekRangeLabel()}</b><small>可提前安排，暂不可完成</small></div><button onClick={planNextWeek}>提前计划 <Icon name="arrow" size={15}/></button></div></article>
       </section>
       <section className="training-section"><div className="section-heading"><div><h2>职场训练场</h2><p>沉浸式场景训练，让每一次练习更接近真实工作。</p></div><button onClick={() => openSection('模拟训练')}>全部训练 <Icon name="arrow" size={17}/></button></div><div className="scenario-grid">{scenarios.map((s, i) => <article className={`scenario ${s.color}`} key={s.title}><div className="scene-visual"><div className="scene-circle"><Icon name={s.icon} size={42}/></div><div className="scene-lines"><i/><i/><i/></div></div><div className="scenario-body"><div><h3>{s.title}</h3><span>{s.tag}</span></div><p>{s.text}</p><footer><small><Icon name="clock" size={15}/> 预计 {i === 1 ? 50 : 60} 分钟</small><button onClick={() => startScenario(s)}>立即训练 <Icon name="arrow" size={16}/></button></footer></div></article>)}</div>
       </section>
