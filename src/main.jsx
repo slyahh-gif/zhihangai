@@ -162,6 +162,33 @@ function calculateAssessment(answers) {
   return { overall, dimensions, primaryCareer: scored[0], alternatives: scored.slice(1) };
 }
 
+function buildResumeDraft(user, result) {
+  const dimensions = result.dimensions;
+  return `${user.name}｜实习求职简历
+
+联系方式
+邮箱：${user.email}
+
+求职意向
+${result.primaryCareer.name} 实习生
+
+个人优势
+职业测评综合匹配度 ${result.overall}/100，推荐方向为“${result.primaryCareer.name}”。${result.primaryCareer.intro}
+技术基础 ${dimensions.technical} 分｜项目交付 ${dimensions.delivery} 分｜协作沟通 ${dimensions.collaboration} 分｜成长驱动力 ${dimensions.growth} 分｜AI 应用 ${dimensions.ai} 分。
+
+技能与学习方向
+Java、Python、Java Web、MySQL；持续完成 Spring Boot 项目练习，并关注 AI 应用开发与业务场景落地。
+
+项目经历（可按实际项目补充）
+职航 AI｜职业测评与成长计划平台
+• 完成 25 题职业测评与多维能力评分，生成实习方向和学习建议。
+• 设计成长计划、每日打卡、模拟训练与学习广场等功能，支持用户持续记录学习过程。
+• 使用 React 构建前端交互界面，结合 Supabase 实现注册登录与社区动态数据同步。
+
+自我评价
+具备持续学习意识和项目实践意愿，能够围绕目标拆分任务、主动沟通并推进交付。希望在 ${result.primaryCareer.name} 岗位中积累真实业务经验。`;
+}
+
 function evaluateTrainingResponse(response) {
   const text = response.trim();
   if (!text) return { score: 0, level: '未完成', lengthScore: 0, clarityScore: 0, collaborationScore: 0, actionScore: 0, advice: '请先写出你的回复，再提交训练。建议至少说明：当前进度、下一步动作、负责人或完成时间。' };
@@ -400,6 +427,10 @@ function App() {
 
   const hasAssessment = Boolean(assessmentResult);
   const startTest = () => { setTestStep(0); setTestAnswers([]); setModal('test'); };
+  const openResume = () => {
+    if (!hasAssessment) return openInfo('请先完成职业测评', '完成 25 道职业测评题后，系统会结合你的匹配方向与能力维度生成实习简历初稿。');
+    setModal({ kind: 'resume', content: buildResumeDraft(currentUser, assessmentResult) });
+  };
   const startScenario = (scenario) => { setTrainingResponse(''); setModal(scenario); };
   const openInfo = (title, text) => setModal({ kind: 'info', title, text });
   const openSection = (label) => setActive(label);
@@ -481,7 +512,7 @@ function App() {
       <div className="user-menu-wrap"><button className="user-card" onClick={() => setUserMenu((open) => !open)} aria-expanded={userMenu} title="打开账号菜单"><div className="avatar">{currentUser.name.slice(0, 1)}</div><div><b>{currentUser.name}，你好</b><small>{currentUser.email}</small></div></button>{userMenu && <div className="user-menu"><span>账号菜单</span><button className="menu-setting" onClick={() => { setUserMenu(false); openSection('设置'); }}><span><Icon name="settings" size={15}/> 设置</span><Icon name="arrow" size={15}/></button><button onClick={requestLogout}>退出登录 <Icon name="arrow" size={15}/></button></div>}</div>
     </aside>
     <section className="content">
-      <header className="topbar"><div><h1>{active === '首页' ? '同学你好，欢迎来到职航 AI' : active}</h1><p>{subtitle}</p></div>{active === '首页' && <div className="daily-encouragement"><Icon name="spark" size={17}/><div><small>每日鼓励</small><span>{dailyEncouragement}</span></div></div>}<button className="primary" onClick={startTest}><Icon name="compass"/>开始测评</button></header>
+      <header className="topbar"><div><h1>{active === '首页' ? '同学你好，欢迎来到职航 AI' : active}</h1><p>{subtitle}</p></div>{active === '首页' && <div className="daily-encouragement"><Icon name="spark" size={17}/><div><small>每日鼓励</small><span>{dailyEncouragement}</span></div></div>}<div className="topbar-actions"><button className="primary" onClick={startTest}><Icon name="compass"/>开始测评</button>{active === '首页' && <button className="resume-entry" onClick={openResume}><Icon name="file" size={16}/>生成实习简历</button>}</div></header>
       {active === '首页' ? <><section className="overview-grid">
         <article className="career-card panel">
           <div className="panel-title"><span>你的职业匹配度总览</span><button onClick={() => openSection('我的报告')}>查看报告 <Icon name="arrow" size={16}/></button></div>
@@ -494,7 +525,7 @@ function App() {
       <footer className="privacy"><Icon name="lock" size={15}/> 你的职业数据仅用于生成个性化建议，可在“我的报告”中随时删除。</footer></> : active === '学习广场' ? <SocialFeed currentUser={currentUser}/> : active === '成长计划' ? <GrowthPlanPanel complete={complete} futurePlan={futurePlan} onPlanChange={setFuturePlan} onBackHome={() => setActive('首页')} checkins={checkinState.checkins} makeupCards={checkinState.makeupCards} onCheckinToggle={toggleCheckin}/> : <section className="workspace panel"><div className="workspace-hero"><span>{selectedContent.eyebrow}</span><h2>{selectedContent.title}</h2><p>{selectedContent.description}</p><button className="primary" onClick={active === '设置' ? toggleTheme : active === '职业测评' || (active === '我的报告' && !hasAssessment) ? startTest : () => openInfo('已保存', '这是比赛演示版的本地交互结果；后续可以接入 Spring Boot 与 MySQL 保存真实数据。')}>{active === '设置' ? `切换为${theme === 'dark' ? '浅色' : '深色'}模式` : active === '职业测评' || (active === '我的报告' && !hasAssessment) ? '开始/重新测评' : '保存并查看反馈'} <Icon name="arrow" size={17}/></button></div><div className="workspace-grid">{selectedContent.cards.map(([title, text], index) => <article className="workspace-card" key={title}><div className="workspace-icon"><Icon name={active === '模拟训练' ? 'flask' : active === '我的报告' ? 'file' : active === '设置' ? 'settings' : 'compass'} size={22}/></div><h3>{title}</h3><p>{text}</p><button onClick={active === '设置' && title === '主题外观' ? toggleTheme : active === '设置' && title === '测评数据' ? requestAssessmentReset : () => handleWorkspaceAction(title, text, index)}>{active === '设置' && title === '主题外观' ? '切换模式' : active === '设置' && title === '测评数据' ? '清除并重新测评' : workspaceActionLabel(title)} <Icon name="arrow" size={16}/></button></article>)}</div></section>}
     </section>
     <SmartAssistant complete={complete} result={assessmentResult}/>
-    {modal && <div className="modal-backdrop" onMouseDown={() => setModal(null)}><section className="modal" onMouseDown={e => e.stopPropagation()}>{modal === 'test' ? <><button className="modal-close" onClick={() => setModal(null)}>×</button><div className="modal-icon"><Icon name="compass" size={30}/></div><h2>开始职业测评</h2><p>第 {testStep + 1}/{assessmentQuestions.length} 题 · 根据你的真实情况作答，结果仅用于生成学习建议。</p><div className="question">{assessmentQuestions[testStep].question}</div><div className="options">{assessmentQuestions[testStep].options.map((option, optionIndex) => <button key={option} onClick={() => { const nextAnswers = [...testAnswers]; nextAnswers[testStep] = optionIndex; setTestAnswers(nextAnswers); testStep < assessmentQuestions.length - 1 ? setTestStep(testStep + 1) : finishAssessment(nextAnswers); }}>{option}<Icon name="arrow" size={16}/></button>)}</div></> : modal.kind === 'reset' ? <><button className="modal-close" onClick={() => setModal(null)}>×</button><div className="modal-icon"><Icon name="file" size={30}/></div><h2>{modal.title}</h2><p>{modal.text}</p><div className="confirm-actions"><button className="secondary" onClick={() => setModal(null)}>取消</button><button className="primary" onClick={resetAssessment}>确认清除</button></div></> : modal.kind === 'confirm' ? <><button className="modal-close" onClick={() => setModal(null)}>×</button><div className="modal-icon"><Icon name="lock" size={30}/></div><h2>{modal.title}</h2><p>{modal.text}</p><div className="confirm-actions"><button className="secondary" onClick={() => setModal(null)}>暂不退出</button><button className="primary" onClick={logout}>确认退出</button></div></> : modal.kind === 'feedback' ? <><button className="modal-close" onClick={() => setModal(null)}>×</button><div className="modal-icon"><Icon name="chart" size={30}/></div><h2>训练评分：{modal.score} 分 · {modal.level}</h2><p>回答完整度 {modal.lengthScore}/30 · 表达清晰度 {modal.clarityScore}/25 · 协作意识 {modal.collaborationScore}/25 · 行动方案 {modal.actionScore}/20</p><div className="dialogue"><b>改进建议</b><span>{modal.advice}</span></div><button className="primary wide" onClick={() => setModal(null)}>查看并继续训练 <Icon name="check"/></button></> : modal.kind === 'info' ? <><button className="modal-close" onClick={() => setModal(null)}>×</button><div className="modal-icon"><Icon name="spark" size={30}/></div><h2>{modal.title}</h2><p>{modal.text}</p><button className="primary wide" onClick={() => setModal(null)}>我知道了 <Icon name="check"/></button></> : <><button className="modal-close" onClick={() => setModal(null)}>×</button><div className="modal-icon"><Icon name="spark" size={30}/></div><h2>{modal.title}</h2><p>{modal.text}</p><div className="dialogue"><b>AI 教练 · 训练题目</b><span>{modal.prompt}</span></div><textarea value={trainingResponse} onChange={(event) => setTrainingResponse(event.target.value)} placeholder="输入你的回应。建议结合题目说明具体任务、时间、协作对象和可执行方案。"/><button className="primary wide" onClick={submitTraining}><Icon name="play"/>提交并获取评分</button></>}</section></div>}
+    {modal && <div className="modal-backdrop" onMouseDown={() => setModal(null)}><section className="modal" onMouseDown={e => e.stopPropagation()}>{modal === 'test' ? <><button className="modal-close" onClick={() => setModal(null)}>×</button><div className="modal-icon"><Icon name="compass" size={30}/></div><h2>开始职业测评</h2><p>第 {testStep + 1}/{assessmentQuestions.length} 题 · 根据你的真实情况作答，结果仅用于生成学习建议。</p><div className="question">{assessmentQuestions[testStep].question}</div><div className="options">{assessmentQuestions[testStep].options.map((option, optionIndex) => <button key={option} onClick={() => { const nextAnswers = [...testAnswers]; nextAnswers[testStep] = optionIndex; setTestAnswers(nextAnswers); testStep < assessmentQuestions.length - 1 ? setTestStep(testStep + 1) : finishAssessment(nextAnswers); }}>{option}<Icon name="arrow" size={16}/></button>)}</div></> : modal.kind === 'resume' ? <><button className="modal-close" onClick={() => setModal(null)}>×</button><div className="modal-icon"><Icon name="file" size={30}/></div><h2>实习简历初稿</h2><p>已根据你的职业测评结果生成。请把项目经历和联系方式替换为真实信息后再投递。</p><pre className="resume-preview">{modal.content}</pre><button className="primary wide" onClick={() => { navigator.clipboard?.writeText(modal.content); openInfo('已复制', '简历初稿已复制到剪贴板，可以粘贴到 Word 后继续完善。'); }}>复制简历内容 <Icon name="check"/></button></> : modal.kind === 'reset' ? <><button className="modal-close" onClick={() => setModal(null)}>×</button><div className="modal-icon"><Icon name="file" size={30}/></div><h2>{modal.title}</h2><p>{modal.text}</p><div className="confirm-actions"><button className="secondary" onClick={() => setModal(null)}>取消</button><button className="primary" onClick={resetAssessment}>确认清除</button></div></> : modal.kind === 'confirm' ? <><button className="modal-close" onClick={() => setModal(null)}>×</button><div className="modal-icon"><Icon name="lock" size={30}/></div><h2>{modal.title}</h2><p>{modal.text}</p><div className="confirm-actions"><button className="secondary" onClick={() => setModal(null)}>暂不退出</button><button className="primary" onClick={logout}>确认退出</button></div></> : modal.kind === 'feedback' ? <><button className="modal-close" onClick={() => setModal(null)}>×</button><div className="modal-icon"><Icon name="chart" size={30}/></div><h2>训练评分：{modal.score} 分 · {modal.level}</h2><p>回答完整度 {modal.lengthScore}/30 · 表达清晰度 {modal.clarityScore}/25 · 协作意识 {modal.collaborationScore}/25 · 行动方案 {modal.actionScore}/20</p><div className="dialogue"><b>改进建议</b><span>{modal.advice}</span></div><button className="primary wide" onClick={() => setModal(null)}>查看并继续训练 <Icon name="check"/></button></> : modal.kind === 'info' ? <><button className="modal-close" onClick={() => setModal(null)}>×</button><div className="modal-icon"><Icon name="spark" size={30}/></div><h2>{modal.title}</h2><p>{modal.text}</p><button className="primary wide" onClick={() => setModal(null)}>我知道了 <Icon name="check"/></button></> : <><button className="modal-close" onClick={() => setModal(null)}>×</button><div className="modal-icon"><Icon name="spark" size={30}/></div><h2>{modal.title}</h2><p>{modal.text}</p><div className="dialogue"><b>AI 教练 · 训练题目</b><span>{modal.prompt}</span></div><textarea value={trainingResponse} onChange={(event) => setTrainingResponse(event.target.value)} placeholder="输入你的回应。建议结合题目说明具体任务、时间、协作对象和可执行方案。"/><button className="primary wide" onClick={submitTraining}><Icon name="play"/>提交并获取评分</button></>}</section></div>}
   </main>;
 }
 
